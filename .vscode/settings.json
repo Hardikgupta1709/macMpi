@@ -1,0 +1,7 @@
+{
+    "editor.formatOnSave": true,
+    "C_Cpp.formatting": "clangFormat",
+    "cmake.generator": "Ninja",
+    "cmake.configureOnOpen": true,
+    "cmake.buildDirectory": "${workspaceFolder}/build"
+}
