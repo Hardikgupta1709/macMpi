@@ -13,3 +13,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Create a dummy executable for now
 add_executable(mpirun src/mpirun.c)
+
+# to compile test program alongside mpi run
+add_executable(hello_env tests/hello_env.c)
