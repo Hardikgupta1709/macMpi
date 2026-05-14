@@ -1,131 +1,160 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>    // getopt, fork, getpid
-#include <sys/wait.h>  // waitpid
-#include <sys/types.h> // pid_t
+#include <unistd.h>
+#include <poll.h>
+#include <sys/wait.h>
+#include <signal.h> // For signal handling
+#include <string.h>
 
-// 1. State definitions
-typedef struct
+// Global variables so that the singal handler can access
+pid_t *child_pids = NULL;
+int num_procs = 0;
+
+// 2. signal handler function
+
+void handle_sigint(int sig)
 {
-    int rank;
-    pid_t pid;
-    int exit_status;
-    int is_alive;
-} RankContext;
+    printf("\n[mpirun] Caught Ctrl+C (SIGINT)! cleaning up clones...\n");
 
-typedef struct
-{
-    int num_ranks;      // Total processes
-    RankContext *ranks; // Array of children
-} MpiRunState;
-
-// 2. Main Process Manager
-int main(int argc, char *argv[])
-{
-    int opt;
-    MpiRunState state;
-    state.num_ranks = 1;
-
-    // A. Parse command line arguments
-    while ((opt = getopt(argc, argv, "n:")) != -1)
+    if (child_pids != NULL)
     {
-        if (opt == 'n')
+        for (int i = 0; i < num_procs; i++)
         {
-            state.num_ranks = atoi(optarg);
+            if (child_pids[i] > 0)
+            {
+                // send SIGTERM (terminate) to each chid
+                printf("[mpirun] Killing clone %d (Pid: %d)\n", i, child_pids[i]);
+                kill(child_pids[i], SIGTERM);
+            }
         }
     }
 
-    // B. Get the user's executable (everything after -n)
-    // 'optind' is the index of the first non-flag argument
+    // brief moment for children to die properly to avoid zombies
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+        ;
 
-    if (optind >= argc)
+    printf("[mpirun] Cleanup complete. Exiting.\n");
+    exit(1);
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc < 4 || strcmp(argv[1], "-n") != 0)
     {
-        fprintf(stderr, "Usage: %s -n <num_procs> <executable> [args...]\n", argv[0]);
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "Usage: %s -n <num_procs> <executable>\n", argv[0]);
+        exit(1);
     }
 
-    char *target_executable = argv[optind];
-    char **target_args = &argv[optind]; // Parses the program and any of its arguments
-
-    printf("[mpirun] Launching %d instances of '%s'...\n", state.num_ranks, target_executable);
-
-    // B. Allocate memory
-    state.ranks = malloc(state.num_ranks * sizeof(RankContext));
-
-    // C. Fork loop
-    for (int i = 0; i < state.num_ranks; i++)
+    num_procs = atoi(argv[2]);
+    if (num_procs <= 0)
     {
-        state.ranks[i].rank = i;
-        state.ranks[i].is_alive = 1;
+        fprintf(stderr, "Number of processes must be greater than 0.\n");
+        exit(1);
+    }
+
+    char *target_executable = argv[3];
+
+    child_pids = malloc(num_procs * sizeof(pid_t));
+
+    struct sigaction sa;
+    sa.sa_handler = handle_sigint;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGINT, &sa, NULL) == -1)
+    {
+        perror("sigaction");
+        exit(1);
+    }
+
+    int pipes[num_procs][2];
+    struct pollfd pollfds[num_procs];
+    int active_pipes = num_procs;
+
+    for (int i = 0; i < num_procs; i++)
+    {
+        if (pipe(pipes[i]) == -1)
+        {
+            perror("pipe");
+            exit(1);
+        }
 
         pid_t pid = fork();
 
-        if (pid < 0)
+        if (pid == 0)
         {
-            perror("fork failed");
-            exit(EXIT_FAILURE);
-        }
-        else if (pid == 0)
-        {
-            // 1. integers to strings for the environment
-            char rank_str[16], size_str[16];
-            snprintf(rank_str, sizeof(rank_str), "%d", i);
-            snprintf(size_str, sizeof(size_str), "%d", state.num_ranks);
+            // child process
+            close(pipes[i][0]);
 
-            // 2. Inject Environment Variables
+            // redirecting stdout and stderr to the pipe
+
+            dup2(pipes[i][1], STDOUT_FILENO);
+            dup2(pipes[i][1], STDERR_FILENO);
+            close(pipes[i][1]);
+
+            // Injecting the rank environment variable
+            char rank_str[10];
+            sprintf(rank_str, "%d", i);
             setenv("MPI_RANK", rank_str, 1);
-            setenv("MPI_UNIVERSE_SIZE", size_str, 1);
 
-            // 3. The exec() Boundary
-            execvp(target_executable, target_args);
+            execlp(target_executable, target_executable, NULL);
+            perror("exec failed");
 
-            // 4. If we reach this line, execvp failed
-            fprintf(stderr, "[Rank %d] failed to execute %s\n", i, target_executable);
-            perror("execvp error");
-            exit(EXIT_FAILURE);
+            exit(1);
         }
         else
         {
             // Parent process
-            state.ranks[i].pid = pid;
+            child_pids[i] = pid;
+            close(pipes[i][1]);
+
+            // registered the read-end with my pollfd array
+            pollfds[i].fd = pipes[i][0];
+            pollfds[i].events = POLLIN;
         }
     }
 
-    // D. Wait loop
-    int active_processes = state.num_ranks;
+    printf("mpirun: All processses spawned. Listening for output...\n");
+    char buffer[1024];
 
-    while (active_processes > 0)
+    // polling till we have acitve pipes open
+    while (active_pipes > 0)
     {
-        int status;
-        pid_t dead_pid = waitpid(-1, &status, 0);
-
-        if (dead_pid > 0)
+        int ready = poll(pollfds, num_procs, -1);
+        if (ready == -1)
         {
-            for (int i = 0; i < state.num_ranks; i++)
+            perror("poll");
+            break;
+        }
+
+        // looping through all the pipes
+        for (int i = 0; i < num_procs; i++)
+        {
+            // if events show that data is ready to read
+            if (pollfds[i].revents & POLLIN)
             {
-                if (state.ranks[i].pid == dead_pid)
+                ssize_t bytes = read(pollfds[i].fd, buffer, sizeof(buffer) - 1);
+                if (bytes > 0)
                 {
-                    state.ranks[i].is_alive = 0;
-
-                    if (WIFEXITED(status))
-                    {
-                        state.ranks[i].exit_status = WEXITSTATUS(status);
-                        printf("[mpirun] Rank %d exited gracefully with code %d\n", i, state.ranks[i].exit_status);
-                    }
-                    else
-                    {
-                        printf("[mpirun] Rank %d terminated abnormally!\n", i);
-                    }
-
-                    active_processes--;
-                    break;
+                    buffer[bytes] = '\0';
+                    printf("[Rank %d]: %s", i, buffer);
+                }
+                else if (bytes == 0)
+                {
+                    close(pollfds[i].fd);
+                    pollfds[i].fd = -1;
+                    active_pipes--;
                 }
             }
         }
     }
 
-    printf("[mpirun] All ranks have terminated. Job complete.\n");
+    // waiting for all zombies to finish
+    for (int i = 0; i < num_procs; i++)
+    {
+        wait(NULL);
+    }
 
-    free(state.ranks);
+    free(child_pids);
     return 0;
 }
