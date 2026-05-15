@@ -127,6 +127,10 @@ int main(int argc, char *argv[])
             sprintf(rank_str, "%d", i);
             setenv("MPI_RANK", rank_str, 1);
 
+            char size_str[10];
+            snprintf(size_str, sizeof(size_str), "%d", num_procs);
+            setenv("MPI_UNIVERSE_SIZE", size_str, 1);
+
             // MAX int is 10 chars + 1 for comma + 1 for null terminator = 12 bytes per rank
             size_t fd_list_size = num_procs * 12;
             char *fd_list = malloc(fd_list_size);
