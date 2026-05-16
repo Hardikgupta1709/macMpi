@@ -3,10 +3,19 @@
 
 #define MPI_SUCCESS 0
 #define MPI_ERR_OTHER -1
+#define MPI_ANY_SOURCE -1
+#define MPI_ANY_TAG -1
 
 // Defining MPI_Comm as an integer handle so that it prevents the user form trying to access internal routing tables
 typedef int MPI_Comm;
 typedef int MPI_Datatype;
+
+typedef struct
+{
+    int MPI_SOURCE;
+    int MPI_TAG;
+    int MPI_ERROR;
+} MPI_Status;
 #define MPI_INT 1
 #define MPI_FLOAT 2
 #define MPI_DOUBLE 3
@@ -21,5 +30,7 @@ int MPI_Comm_rank(MPI_Comm comm, int *rank);
 int MPI_Comm_size(MPI_Comm comm, int *size);
 
 int MPI_Send(const void *buff, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm);
+
+int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Status *status);
 
 #endif

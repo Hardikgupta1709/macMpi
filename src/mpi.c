@@ -194,3 +194,96 @@ int MPI_Send(const void *buf, int count, MPI_Datatype datatype, int dest, int ta
 
     return MPI_SUCCESS;
 }
+
+// Loops until the exact number of bytes requested is pulled fromt the os
+static int read_all(int fd, void *buffer, size_t length)
+{
+    char *ptr = (char *)buffer;
+    size_t bytes_left = length;
+
+    while (bytes_left > 0)
+    {
+        ssize_t bytes_read = read(fd, ptr, bytes_left);
+        if (bytes_read < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            return -1; // Actual Network error
+        }
+        else if (bytes_read == 0)
+        {
+            return -1; // Sender disconnected unexpectedly
+        }
+        bytes_left -= bytes_read;
+        ptr += bytes_read;
+    }
+    return 0;
+}
+
+int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Status *status)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    if (source < 0 || source >= g_mpi_state.size || source == g_mpi_state.rank)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    int socket_fd = g_mpi_state.peer_sockets[source];
+    MPI_Header header;
+
+    if (read_all(socket_fd, &header, sizeof(MPI_Header)) != 0)
+    {
+        if (status)
+            status->MPI_ERROR = MPI_ERR_OTHER;
+        return MPI_ERR_OTHER;
+    }
+
+    if (header.magic != 0x4D504931)
+    {
+        if (status)
+            status->MPI_ERROR = MPI_ERR_OTHER;
+        return MPI_ERR_OTHER;
+    }
+
+    if (header.source != source || header.tag != tag || header.type != datatype)
+    {
+        if (status)
+            status->MPI_ERROR = MPI_ERR_OTHER;
+        return MPI_ERR_OTHER;
+    }
+
+    size_t type_size = (datatype == MPI_INT) ? sizeof(int) : 1;
+    size_t max_bytes = count * type_size;
+
+    if (header.data_length > max_bytes)
+    {
+        if (status)
+            status->MPI_ERROR = MPI_ERR_OTHER;
+        return MPI_ERR_OTHER;
+    }
+
+    if (header.data_length > 0)
+    {
+        if (read_all(socket_fd, buf, header.data_length) != 0)
+        {
+            if (status)
+                status->MPI_ERROR = MPI_ERR_OTHER;
+            return MPI_ERR_OTHER;
+        }
+    }
+
+    if (status)
+    {
+        status->MPI_SOURCE = header.source;
+        status->MPI_TAG = header.tag;
+        status->MPI_ERROR = MPI_SUCCESS;
+    }
+
+    return MPI_SUCCESS;
+}
