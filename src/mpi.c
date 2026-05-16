@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
+#include <errno.h>
 
 // this struct is internal to our library
 
@@ -13,6 +15,18 @@ typedef struct
     int *peer_sockets; // Dynamically allocated 1D array of inherited FD's
     int initialized;
 } MPI_GlobalState;
+
+typedef struct __attribute__((aligned(64)))
+{
+    uint32_t magic;
+    int source;
+    int dest;
+    int tag;
+    MPI_Datatype type;
+    int count;
+    size_t data_length;
+    uint8_t padding[32];
+} MPI_Header;
 
 MPI_GlobalState g_mpi_state = {-1, -1, NULL, 0};
 
@@ -113,6 +127,163 @@ int MPI_Finalize(void)
 
     free(g_mpi_state.peer_sockets);
     g_mpi_state.initialized = 0;
+
+    return MPI_SUCCESS;
+}
+
+static int write_all(int fd, const void *buffer, size_t length)
+{
+    const char *ptr = (const char *)buffer;
+    size_t bytes_left = length;
+
+    while (bytes_left > 0)
+    {
+        ssize_t written = write(fd, ptr, bytes_left);
+        if (written <= 0)
+        {
+            if (errno == EINTR)
+            {
+                continue; // Interrupted by a signal, try again
+            }
+            return -1;
+        }
+        bytes_left -= written;
+        ptr += written; // Advanced the pointer forward by the amount sent
+    }
+    return 0;
+}
+
+int MPI_Send(const void *buf, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    if (dest < 0 || dest >= g_mpi_state.size || dest == g_mpi_state.rank)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    int socket_fd = g_mpi_state.peer_sockets[dest];
+
+    // calculating the payload size
+    size_t type_size = (datatype == MPI_INT) ? sizeof(int) : 1;
+    size_t payload_bytes = count * type_size;
+
+    // constructing the 64-byte envelope
+    MPI_Header header;
+    header.magic = 0x4D504931;
+    header.source = g_mpi_state.rank;
+    header.dest = dest;
+    header.tag = tag;
+    header.type = datatype;
+    header.count = count;
+    header.data_length = payload_bytes;
+
+    // pushing the envelope the across the socket
+    if (write_all(socket_fd, &header, sizeof(MPI_Header)) != 0)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    if (write_all(socket_fd, buf, payload_bytes) != 0)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    return MPI_SUCCESS;
+}
+
+// Loops until the exact number of bytes requested is pulled fromt the os
+static int read_all(int fd, void *buffer, size_t length)
+{
+    char *ptr = (char *)buffer;
+    size_t bytes_left = length;
+
+    while (bytes_left > 0)
+    {
+        ssize_t bytes_read = read(fd, ptr, bytes_left);
+        if (bytes_read < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            return -1; // Actual Network error
+        }
+        else if (bytes_read == 0)
+        {
+            return -1; // Sender disconnected unexpectedly
+        }
+        bytes_left -= bytes_read;
+        ptr += bytes_read;
+    }
+    return 0;
+}
+
+int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Status *status)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    if (source < 0 || source >= g_mpi_state.size || source == g_mpi_state.rank)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    int socket_fd = g_mpi_state.peer_sockets[source];
+    MPI_Header header;
+
+    if (read_all(socket_fd, &header, sizeof(MPI_Header)) != 0)
+    {
+        if (status)
+            status->MPI_ERROR = MPI_ERR_OTHER;
+        return MPI_ERR_OTHER;
+    }
+
+    if (header.magic != 0x4D504931)
+    {
+        if (status)
+            status->MPI_ERROR = MPI_ERR_OTHER;
+        return MPI_ERR_OTHER;
+    }
+
+    if (header.source != source || header.tag != tag || header.type != datatype)
+    {
+        if (status)
+            status->MPI_ERROR = MPI_ERR_OTHER;
+        return MPI_ERR_OTHER;
+    }
+
+    size_t type_size = (datatype == MPI_INT) ? sizeof(int) : 1;
+    size_t max_bytes = count * type_size;
+
+    if (header.data_length > max_bytes)
+    {
+        if (status)
+            status->MPI_ERROR = MPI_ERR_OTHER;
+        return MPI_ERR_OTHER;
+    }
+
+    if (header.data_length > 0)
+    {
+        if (read_all(socket_fd, buf, header.data_length) != 0)
+        {
+            if (status)
+                status->MPI_ERROR = MPI_ERR_OTHER;
+            return MPI_ERR_OTHER;
+        }
+    }
+
+    if (status)
+    {
+        status->MPI_SOURCE = header.source;
+        status->MPI_TAG = header.tag;
+        status->MPI_ERROR = MPI_SUCCESS;
+    }
 
     return MPI_SUCCESS;
 }
