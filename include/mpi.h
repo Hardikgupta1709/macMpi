@@ -11,6 +11,12 @@
 // Defining MPI_Comm as an integer handle so that it prevents the user form trying to access internal routing tables
 typedef int MPI_Comm;
 typedef int MPI_Datatype;
+typedef struct MPI_Request_int *MPI_Request;
+
+#define MPI_REQUEST_NULL ((MPI_REQUEST)0);
+
+int MPI__Isend(const void *buff, int count, int datatype, int dest, int tag, MPI_Request *request);
+int MPI_Wait(MPI_Request *request);
 
 typedef struct
 {
