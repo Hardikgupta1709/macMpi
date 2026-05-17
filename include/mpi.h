@@ -6,6 +6,8 @@
 #define MPI_ANY_SOURCE -1
 #define MPI_ANY_TAG -1
 
+#include <stddef.h>
+
 // Defining MPI_Comm as an integer handle so that it prevents the user form trying to access internal routing tables
 typedef int MPI_Comm;
 typedef int MPI_Datatype;
@@ -15,6 +17,8 @@ typedef struct
     int MPI_SOURCE;
     int MPI_TAG;
     int MPI_ERROR;
+
+    size_t _internal_count;
 } MPI_Status;
 #define MPI_INT 1
 #define MPI_FLOAT 2
