@@ -26,7 +26,7 @@ static struct MPI_Request_int *dequeue_request()
         engine_queue.head = req->next;
         if (engine_queue.head == NULL)
         {
-            engine_queue.tail == NULL;
+            engine_queue.tail = NULL;
         }
     }
     return req;
@@ -68,4 +68,28 @@ void *progress_engine_loop(void *arg)
     }
     printf("[Engine] Background thread shutting down.\n");
     return NULL;
+}
+
+void start_engine()
+{
+    engine_is_running = 1;
+
+    if (pthread_create(&progress_thread, NULL, progress_engine_loop, NULL) != 0)
+    {
+        fprintf(stderr, "[MPI Error] Failed to start background progress engine.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void stop_engine()
+{
+    pthread_mutex_lock(&engine_queue.mutex);
+
+    engine_is_running = 0;
+
+    pthread_cond_signal(&engine_queue.cond);
+
+    pthread_mutex_unlock(&engine_queue.mutex);
+
+    pthread_join(progress_thread, NULL);
 }

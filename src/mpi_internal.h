@@ -31,3 +31,6 @@ typedef struct
 } RequestQueue;
 
 extern RequestQueue engine_queue;
+
+void start_engine();
+void stop_engine();
