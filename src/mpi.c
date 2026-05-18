@@ -1,4 +1,5 @@
 #include "../include/mpi.h"
+#include "mpi_internal.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -95,6 +96,8 @@ int MPI_Init(int *argc, char ***argv)
         }
     }
 
+    start_engine();
+
     g_mpi_state.initialized = 1;
     return MPI_SUCCESS;
 }
@@ -133,6 +136,8 @@ int MPI_Finalize(void)
             close(g_mpi_state.peer_sockets[i]);
         }
     }
+
+    stop_engine();
 
     free(g_mpi_state.peer_sockets);
     g_mpi_state.initialized = 0;
