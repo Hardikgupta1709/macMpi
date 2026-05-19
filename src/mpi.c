@@ -8,35 +8,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <stddef.h>
-
-typedef struct __attribute__((aligned(64)))
-{
-    uint32_t magic;
-    int source;
-    int dest;
-    int tag;
-    MPI_Datatype type;
-    int count;
-    size_t data_length;
-    uint8_t padding[32];
-} MPI_Header;
-
-typedef struct UMQ_Node
-{
-    MPI_Header header;     // The routing envelope
-    void *payload;         // Dyanmically Allocating buffer for the acutal data
-    struct UMQ_Node *next; // Pointer to the next unexpected message
-} UMQ_Node;
-
-typedef struct
-{
-    int rank;
-    int size;
-    int *peer_sockets; // Dynamically allocated 1D array of inherited FD's
-    int initialized;
-
-    UMQ_Node *umq_head; // Head of the unexpected Message Queue
-} MPI_GlobalState;
+#include <sched.h>
 
 MPI_GlobalState g_mpi_state = {-1, -1, NULL, 0, NULL};
 
@@ -145,7 +117,7 @@ int MPI_Finalize(void)
     return MPI_SUCCESS;
 }
 
-static int write_all(int fd, const void *buffer, size_t length)
+int write_all(int fd, const void *buffer, size_t length)
 {
     const char *ptr = (const char *)buffer;
     size_t bytes_left = length;
@@ -393,4 +365,62 @@ int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, M
             }
         }
     }
+}
+
+int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm, MPI_Request *request)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    // Allocating the internal request structure on the heap
+    struct MPI_Request_int *internal_req = malloc(sizeof(struct MPI_Request_int));
+    if (!internal_req)
+    {
+        fprintf(stderr, "MPI Fatal: Out of memory allocating request.\n");
+        return MPI_ERR_OTHER;
+    }
+
+    internal_req->type = REQ_SEND;
+    internal_req->target_rank = dest;
+    internal_req->tag = tag;
+
+    internal_req->buffer = (void *)buf;
+
+    internal_req->count = count;
+    internal_req->datatype_size = (datatype == MPI_INT) ? sizeof(int) : 1;
+    internal_req->next = NULL;
+
+    printf("[Main] MPI_Isend called: Packaged request for rank %d (Tag %d). Pushing to Engine...\n", dest, tag);
+
+    enqueue_request(internal_req);
+
+    *request = internal_req;
+
+    return MPI_SUCCESS;
+}
+
+int MPI_Wait(MPI_Request *request, MPI_Status *status)
+{
+    if (request == NULL || *request == MPI_REQUEST_NULL)
+    {
+        return MPI_SUCCESS;
+    }
+
+    struct MPI_Request_int *req = *request;
+
+    // Spin wait loop
+    while (req->is_complete == 0)
+    {
+        // Yeild the CPU to prevent the main thread from locking up the system
+        sched_yield();
+    }
+
+    // Background work is finished -> memory clean up
+    free(req);
+
+    *request = MPI_REQUEST_NULL;
+
+    return MPI_SUCCESS;
 }

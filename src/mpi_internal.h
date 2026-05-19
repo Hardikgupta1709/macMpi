@@ -1,5 +1,43 @@
 #include <pthread.h>
+#ifndef MPI_INTERNAL_H
+#define MPI_INTERNAL_H
+
+#include <stdint.h>
+#include <stddef.h>
 #include "../include/mpi.h"
+
+typedef struct __attribute__((aligned(64)))
+{
+    uint32_t magic;
+    int source;
+    int dest;
+    int tag;
+    MPI_Datatype type;
+    int count;
+    size_t data_length;
+    uint8_t padding[32];
+} MPI_Header;
+
+typedef struct UMQ_Node
+{
+    MPI_Header header;     // The routing envelope
+    void *payload;         // Dyanmically Allocating buffer for the acutal data
+    struct UMQ_Node *next; // Pointer to the next unexpected message
+} UMQ_Node;
+
+typedef struct
+{
+    int rank;
+    int size;
+    int *peer_sockets; // Dynamically allocated 1D array of inherited FD's
+    int initialized;
+
+    UMQ_Node *umq_head; // Head of the unexpected Message Queue
+} MPI_GlobalState;
+
+extern MPI_GlobalState g_MPI_state;
+
+int write_all(int fd, const void *buffer, size_t length);
 
 typedef enum
 {
@@ -34,3 +72,7 @@ extern RequestQueue engine_queue;
 
 void start_engine();
 void stop_engine();
+
+void enqueue_request(struct MPI_Request_int *req);
+
+#endif

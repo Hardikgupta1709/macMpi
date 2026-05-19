@@ -13,11 +13,7 @@ typedef int MPI_Comm;
 typedef int MPI_Datatype;
 typedef struct MPI_Request_int *MPI_Request;
 
-#define MPI_REQUEST_NULL ((MPI_REQUEST)0);
-
-int MPI__Isend(const void *buff, int count, int datatype, int dest, int tag, MPI_Request *request);
-int MPI_Wait(MPI_Request *request);
-
+#define MPI_REQUEST_NULL ((MPI_Request)0)
 typedef struct
 {
     int MPI_SOURCE;
@@ -26,6 +22,11 @@ typedef struct
 
     size_t _internal_count;
 } MPI_Status;
+
+#define MPI_STATUS_IGNORE ((MPI_Status *)0)
+int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm, MPI_Request *request);
+int MPI_Wait(MPI_Request *request, MPI_Status *status);
+
 #define MPI_INT 1
 #define MPI_FLOAT 2
 #define MPI_DOUBLE 3
