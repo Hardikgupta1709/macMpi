@@ -8,35 +8,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <stddef.h>
-
-typedef struct __attribute__((aligned(64)))
-{
-    uint32_t magic;
-    int source;
-    int dest;
-    int tag;
-    MPI_Datatype type;
-    int count;
-    size_t data_length;
-    uint8_t padding[32];
-} MPI_Header;
-
-typedef struct UMQ_Node
-{
-    MPI_Header header;     // The routing envelope
-    void *payload;         // Dyanmically Allocating buffer for the acutal data
-    struct UMQ_Node *next; // Pointer to the next unexpected message
-} UMQ_Node;
-
-typedef struct
-{
-    int rank;
-    int size;
-    int *peer_sockets; // Dynamically allocated 1D array of inherited FD's
-    int initialized;
-
-    UMQ_Node *umq_head; // Head of the unexpected Message Queue
-} MPI_GlobalState;
+#include <sched.h>
 
 MPI_GlobalState g_mpi_state = {-1, -1, NULL, 0, NULL};
 
@@ -145,7 +117,7 @@ int MPI_Finalize(void)
     return MPI_SUCCESS;
 }
 
-static int write_all(int fd, const void *buffer, size_t length)
+int write_all(int fd, const void *buffer, size_t length)
 {
     const char *ptr = (const char *)buffer;
     size_t bytes_left = length;
@@ -425,6 +397,30 @@ int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int t
     enqueue_request(internal_req);
 
     *request = internal_req;
+
+    return MPI_SUCCESS;
+}
+
+int MPI_Wait(MPI_Request *request, MPI_Status *status)
+{
+    if (request == NULL || *request == MPI_REQUEST_NULL)
+    {
+        return MPI_SUCCESS;
+    }
+
+    struct MPI_Request_int *req = *request;
+
+    // Spin wait loop
+    while (req->is_complete == 0)
+    {
+        // Yeild the CPU to prevent the main thread from locking up the system
+        sched_yield();
+    }
+
+    // Background work is finished -> memory clean up
+    free(req);
+
+    *request = MPI_REQUEST_NULL;
 
     return MPI_SUCCESS;
 }
