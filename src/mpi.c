@@ -394,3 +394,37 @@ int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, M
         }
     }
 }
+
+int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm, MPI_Request *request)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    // Allocating the internal request structure on the heap
+    struct MPI_Request_int *internal_req = malloc(sizeof(struct MPI_Request_int));
+    if (!internal_req)
+    {
+        fprintf(stderr, "MPI Fatal: Out of memory allocating request.\n");
+        return MPI_ERR_OTHER;
+    }
+
+    internal_req->type = REQ_SEND;
+    internal_req->target_rank = dest;
+    internal_req->tag = tag;
+
+    internal_req->buffer = (void *)buf;
+
+    internal_req->count = count;
+    internal_req->datatype_size = (datatype == MPI_INT) ? sizeof(int) : 1;
+    internal_req->next = NULL;
+
+    printf("[Main] MPI_Isend called: Packaged request for rank %d (Tag %d). Pushing to Engine...\n", dest, tag);
+
+    enqueue_request(internal_req);
+
+    *request = internal_req;
+
+    return MPI_SUCCESS;
+}

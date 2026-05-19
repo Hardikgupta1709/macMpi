@@ -34,3 +34,5 @@ extern RequestQueue engine_queue;
 
 void start_engine();
 void stop_engine();
+
+void enqueue_request(struct MPI_Request_int *req);

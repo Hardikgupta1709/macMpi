@@ -13,9 +13,9 @@ typedef int MPI_Comm;
 typedef int MPI_Datatype;
 typedef struct MPI_Request_int *MPI_Request;
 
-#define MPI_REQUEST_NULL ((MPI_REQUEST)0);
+#define MPI_REQUEST_NULL ((MPI_Request)0);
 
-int MPI__Isend(const void *buff, int count, int datatype, int dest, int tag, MPI_Request *request);
+int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm, MPI_Request *request);
 int MPI_Wait(MPI_Request *request);
 
 typedef struct

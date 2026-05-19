@@ -93,3 +93,24 @@ void stop_engine()
 
     pthread_join(progress_thread, NULL);
 }
+
+void enqueue_request(struct MPI_Request_int *req)
+{
+    pthread_mutex_lock(&engine_queue.mutex);
+
+    req->next = NULL;
+    if (engine_queue.tail == NULL)
+    {
+        engine_queue.head = req;
+        engine_queue.tail = req;
+    }
+    else
+    {
+        engine_queue.tail->next = req;
+        engine_queue.tail = req;
+    }
+
+    pthread_cond_signal(&engine_queue.cond);
+
+    pthread_mutex_unlock(&engine_queue.mutex);
+}
