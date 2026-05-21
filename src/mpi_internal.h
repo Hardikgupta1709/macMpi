@@ -33,11 +33,15 @@ typedef struct
     int initialized;
 
     UMQ_Node *umq_head; // Head of the unexpected Message Queue
+    UMQ_Node *umq_tail; // Tail of the unexpected Message Queue
+
 } MPI_GlobalState;
 
-extern MPI_GlobalState g_MPI_state;
+extern MPI_GlobalState g_mpi_state;
 
 int write_all(int fd, const void *buffer, size_t length);
+
+int read_all(int fd, void *buffer, size_t length);
 
 typedef enum
 {
@@ -74,5 +78,12 @@ void start_engine();
 void stop_engine();
 
 void enqueue_request(struct MPI_Request_int *req);
+
+struct UMQ_Node *extract_from_umq(int source, int tag);
+
+extern struct MPI_Request_int *active_receives_head;
+extern struct MPI_Request_int *active_receives_tail;
+
+struct MPI_Request_int *match_active_receive(int source, int tag);
 
 #endif
