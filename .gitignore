@@ -1,29 +1,25 @@
-# Prerequisites
+# Dependency files
 *.d
 
-# Compiled Object files
-*.slo
-*.lo
+# Object files
 *.o
 *.obj
+*.lo
+*.slo
 
-# Precompiled Headers
+# Precompiled headers
 *.gch
 *.pch
 
-# Compiled Dynamic libraries
+# Shared libraries
 *.so
 *.dylib
 *.dll
 
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
+# Static libraries
 *.a
+*.la
+*.lai
 *.lib
 
 # Executables
@@ -31,10 +27,19 @@
 *.out
 *.app
 
-# Build folder (CMake/Ninja output)
-/build/
-/.cache/
+# CMake / Ninja build output
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+build.ninja
+.ninja_deps
+.ninja_log
 compile_commands.json
 
-# macOS specific
+# macOS
 .DS_Store
+
+# VS Code local settings
+.vscode/
