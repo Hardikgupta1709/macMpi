@@ -194,7 +194,7 @@ static int is_match(int req_source, int req_tag, int hdr_source, int hdr_tag)
 }
 
 // Loops until the exact number of bytes requested is pulled fromt the os
-static int read_all(int fd, void *buffer, size_t length)
+int read_all(int fd, void *buffer, size_t length)
 {
     char *ptr = (char *)buffer;
     size_t bytes_left = length;
@@ -320,6 +320,25 @@ int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, M
         // Reading the 64-Byte envelope
         read_all(active_fd, &incoming_header, sizeof(MPI_Header));
 
+        struct MPI_Request_int *waiting_req = match_active_receive(incoming_header.source, incoming_header.tag);
+
+        if (waiting_req != NULL)
+        {
+            printf("[Engine] Incoming message matched active MPI_Irecv, routing to user buffer.\n");
+            read_all(active_fd, waiting_req->buffer, incoming_header.data_length);
+            waiting_req->is_complete = 1;
+        }
+        else
+        {
+            printf("[Engine] No active receive found. Routing to UMQ.\n");
+
+            struct UMQ_Node *new_node = malloc(sizeof(struct UMQ_Node));
+            new_node->header = incoming_header;
+            new_node->payload = malloc(incoming_header.data_length);
+
+            read_all(active_fd, new_node->payload, incoming_header.data_length);
+        }
+
         if (is_match(source, tag, incoming_header.source, incoming_header.tag))
         {
 
@@ -391,6 +410,7 @@ int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int t
     internal_req->count = count;
     internal_req->datatype_size = (datatype == MPI_INT) ? sizeof(int) : 1;
     internal_req->next = NULL;
+    internal_req->is_complete = 0;
 
     printf("[Main] MPI_Isend called: Packaged request for rank %d (Tag %d). Pushing to Engine...\n", dest, tag);
 
@@ -423,4 +443,100 @@ int MPI_Wait(MPI_Request *request, MPI_Status *status)
     *request = MPI_REQUEST_NULL;
 
     return MPI_SUCCESS;
+}
+
+int MPI_Irecv(void *buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Request *request)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    struct MPI_Request_int *req = malloc(sizeof(struct MPI_Request_int));
+    if (!req)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    req->type = REQ_RECV;
+    req->target_rank = source;
+    req->tag = tag;
+    req->buffer = buf;
+    req->count = (size_t)count;
+    req->datatype_size = (datatype == MPI_INT) ? sizeof(int) : 1;
+    req->next = NULL;
+    req->is_complete = 0;
+
+    enqueue_request(req);
+
+    *request = req;
+
+    return MPI_SUCCESS;
+}
+
+struct UMQ_Node *extract_from_umq(int source, int tag)
+{
+    struct UMQ_Node *current = g_mpi_state.umq_head;
+    struct UMQ_Node *prev = NULL;
+
+    while (current != NULL)
+    {
+        if (is_match(source, tag, current->header.source, current->header.tag))
+        {
+            // if we found teh match then unlink from the queue
+            if (prev == NULL)
+            {
+                // match found at front of queue.
+                g_mpi_state.umq_head = current->next;
+            }
+            else
+            {
+                // match in middle.
+                prev->next = current->next;
+            }
+            if (current == g_mpi_state.umq_tail)
+            {
+                g_mpi_state.umq_tail = prev;
+            }
+
+            // the unlinked node
+            return current;
+        }
+
+        prev = current;
+        current = current->next;
+    }
+
+    return NULL;
+}
+
+struct MPI_Request_int *match_active_receive(int source, int tag)
+{
+    struct MPI_Request_int *current = active_receives_head;
+    struct MPI_Request_int *prev = NULL;
+
+    while (current != NULL)
+    {
+        if (is_match(source, tag, current->target_rank, current->tag))
+        {
+
+            if (prev == NULL)
+            {
+                active_receives_head = current->next;
+            }
+            else
+            {
+                prev->next = current->next;
+            }
+
+            if (current == active_receives_tail)
+            {
+                active_receives_tail = prev;
+            }
+            return current;
+        }
+        prev = current;
+        current = current->next;
+    }
+    return NULL;
 }
