@@ -8,7 +8,7 @@
 // macOS specific header
 #include <sys/qos.h>
 
-RequestQueue engine_queue = {NULL, NULL, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER};
+RequestQueue engine_queue = {NULL, NULL, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
 
 volatile int engine_is_running = 0;
 pthread_t progress_thread;
@@ -44,13 +44,37 @@ void *progress_engine_loop(void *arg)
     pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
     printf("[Engine] Background Thread started on Performance Cores.\n");
 
+    // Kqueue setup
+    int kq = kqueue();
+    if (kq == -1)
+    {
+        perror("[Engine] Fatal: kquque initializatio failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // register all peer sockets to the kqueue exactly once
+    for (int i = 0; i < g_mpi_state.size; i++)
+    {
+        if (i != g_mpi_state.rank && g_mpi_state.peer_sockets[i] != -1)
+        {
+            struct kevent change;
+
+            // macOS: keep eye on this socket for READ events, ADD it to the queue, and enable it
+            EV_SET(&change, g_mpi_state.peer_sockets[i], EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, NULL);
+
+            if (kevent(kq, &change, 1, NULL, 0, NULL) == -1)
+            {
+                perror("[Engine] Fatal: kevent socket registration failed");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    printf("[Engine] kqueue successfully registered all peer sockets.\n");
+
     while (engine_is_running)
     {
         pthread_mutex_lock(&engine_queue.mutex);
-        while (queue_is_empty() && engine_is_running)
-        {
-            pthread_cond_wait(&engine_queue.cond, &engine_queue.mutex);
-        }
 
         if (!engine_is_running && queue_is_empty())
         {
@@ -85,6 +109,7 @@ void *progress_engine_loop(void *arg)
                 write_all(dest_fd, req->buffer, payload_bytes);
 
                 req->is_complete = 1;
+                pthread_cond_broadcast(&engine_queue.completion_cond);
             }
             else if (req->type == REQ_RECV)
             {
@@ -105,6 +130,7 @@ void *progress_engine_loop(void *arg)
 
                     // marked request as complete so that MPI_Wait can unblock Main thread
                     req->is_complete = 1;
+                    pthread_cond_broadcast(&engine_queue.completion_cond);
                 }
                 else
                 {
@@ -129,66 +155,56 @@ void *progress_engine_loop(void *arg)
             }
         }
 
-        // Polling netwrok sockets for incoming data
-        struct pollfd *fds = malloc(g_mpi_state.size * sizeof(struct pollfd));
-        int num_fds = 0;
+        struct kevent eventlist[32]; // processing upto 32 network events at once.
+        struct timespec timeout = {0, 10000000};
 
-        for (int i = 0; i < g_mpi_state.size; i++)
+        // block until data arrives or 10ms pass
+        int num_events = kevent(kq, NULL, 0, eventlist, 32, &timeout);
+
+        if (num_events > 0)
         {
-            if (i != g_mpi_state.rank && g_mpi_state.peer_sockets[i] != -1)
+            for (int i = 0; i < num_events; i++)
             {
-                fds[num_fds].fd = g_mpi_state.peer_sockets[i];
-                fds[num_fds].events = POLLIN;
-                num_fds++;
-            }
-        }
+                // kqueue stores the socket file descriptors inside the 'ident' field
+                int active_fd = (int)eventlist[i].ident;
+                MPI_Header incoming_header;
 
-        int ret = poll(fds, num_fds, 10);
-
-        if (ret > 0)
-        {
-            for (int i = 0; i < num_fds; i++)
-            {
-                if (fds[i].revents & POLLIN)
+                if (read(active_fd, &incoming_header, sizeof(MPI_Header)) > 0)
                 {
-                    int active_fd = fds[i].fd;
-                    MPI_Header incoming_header;
+                    struct MPI_Request_int *waiting_req = match_active_receive(incoming_header.source, incoming_header.tag);
 
-                    if (read(active_fd, &incoming_header, sizeof(MPI_Header)) > 0)
+                    if (waiting_req != NULL)
                     {
-                        struct MPI_Request_int *waiting_req = match_active_receive(incoming_header.source, incoming_header.tag);
+                        printf("[Engine] kqueue event: Matched active MPI_Irecv, routing to user.\n");
+                        read_all(active_fd, waiting_req->buffer, incoming_header.data_length);
 
-                        if (waiting_req != NULL)
+                        waiting_req->is_complete = 1;
+                        pthread_cond_broadcast(&engine_queue.completion_cond); // wake up mpi wait
+                    }
+                    else
+                    {
+                        printf("[Engine] kqueue event: No active receive. Routing to UMQ.\n");
+                        struct UMQ_Node *new_node = malloc(sizeof(struct UMQ_Node));
+                        new_node->header = incoming_header;
+                        new_node->payload = malloc(incoming_header.data_length);
+                        read_all(active_fd, new_node->payload, incoming_header.data_length);
+                        new_node->next = NULL;
+
+                        if (g_mpi_state.umq_head == NULL)
                         {
-                            printf("[Engine] Incoming message matched acive MPI_Irecv, routing to user buffer.\n");
-                            read_all(active_fd, waiting_req->buffer, incoming_header.data_length);
-                            waiting_req->is_complete = 1;
+                            g_mpi_state.umq_head = g_mpi_state.umq_tail = new_node;
                         }
                         else
                         {
-                            printf("[Engine] No active receive found. Routing to UMQ.\n");
-                            struct UMQ_Node *new_node = malloc(sizeof(struct UMQ_Node));
-                            new_node->header = incoming_header;
-                            new_node->payload = malloc(incoming_header.data_length);
-                            read_all(active_fd, new_node->payload, incoming_header.data_length);
-                            new_node->next = NULL;
-
-                            if (g_mpi_state.umq_head == NULL)
-                            {
-                                g_mpi_state.umq_head = g_mpi_state.umq_tail = new_node;
-                            }
-                            else
-                            {
-                                g_mpi_state.umq_tail->next = new_node;
-                                g_mpi_state.umq_tail = new_node;
-                            }
+                            g_mpi_state.umq_tail->next = new_node;
+                            g_mpi_state.umq_tail = new_node;
                         }
                     }
                 }
             }
         }
-        free(fds);
     }
+    close(kq);
     printf("[Engine] Background thread shutting down.\n");
     return NULL;
 }

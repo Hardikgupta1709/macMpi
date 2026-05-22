@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "../include/mpi.h"
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
 
 typedef struct __attribute__((aligned(64)))
 {
@@ -69,7 +72,8 @@ typedef struct
     struct MPI_Request_int *tail;
 
     pthread_mutex_t mutex;
-    pthread_cond_t cond;
+    pthread_cond_t cond;            // Engine wait on this when queue is empty
+    pthread_cond_t completion_cond; // Main thread waits on this in MPI_Wait
 } RequestQueue;
 
 extern RequestQueue engine_queue;
