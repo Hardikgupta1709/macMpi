@@ -17,6 +17,7 @@ add_library(mpi
 # mpirun executable
 add_executable(mpirun
     src/mpirun.c
+    src/collectives.c
 )
 target_link_libraries(mpirun mpi)
 
@@ -37,3 +38,9 @@ add_executable(test_kqueue
     tests/test_kqueue.c
 )
 target_link_libraries(test_kqueue mpi)
+
+add_executable(test_barrier
+    tests/test_barrier.c
+    src/collectives.c    
+)
+target_link_libraries(test_barrier mpi)
