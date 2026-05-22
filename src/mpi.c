@@ -430,21 +430,45 @@ int MPI_Wait(MPI_Request *request, MPI_Status *status)
 
     struct MPI_Request_int *req = *request;
 
+    // replaced spin-loop with spurious-wakeup-safe condition wait
+    pthread_mutex_lock(&engine_queue.mutex);
+
     // Spin wait loop
     while (req->is_complete == 0)
     {
-        // Yeild the CPU to prevent the main thread from locking up the system
-        sched_yield();
+        pthread_cond_wait(&engine_queue.completion_cond, &engine_queue.mutex);
     }
+
+    pthread_mutex_unlock(&engine_queue.mutex);
 
     // Background work is finished -> memory clean up
     free(req);
-
     *request = MPI_REQUEST_NULL;
 
     return MPI_SUCCESS;
 }
 
+int MPI_Test(MPI_Request *request, int *flag, MPI_Status *status)
+{
+    if (request == NULL || *request == MPI_REQUEST_NULL)
+    {
+        *flag = 1;
+        return MPI_SUCCESS;
+    }
+
+    struct MPI_Request_int *req = *request;
+
+    pthread_mutex_lock(&engine_queue.mutex);
+    *flag = req->is_complete;
+    pthread_mutex_unlock(&engine_queue.mutex);
+
+    if (*flag)
+    {
+        free(req);
+        *request = MPI_REQUEST_NULL;
+    }
+    return MPI_SUCCESS;
+}
 int MPI_Irecv(void *buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Request *request)
 {
     if (!g_mpi_state.initialized)
