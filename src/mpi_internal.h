@@ -37,6 +37,13 @@ typedef struct
 
 } MPI_GlobalState;
 
+RequestQueue engine_queue = {
+    NULL,
+    NULL,
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_COND_INITIALIZER,
+    PTHREAD_COND_INITIALIZER};
+
 extern MPI_GlobalState g_mpi_state;
 
 int write_all(int fd, const void *buffer, size_t length);
@@ -69,7 +76,8 @@ typedef struct
     struct MPI_Request_int *tail;
 
     pthread_mutex_t mutex;
-    pthread_cond_t cond;
+    pthread_cond_t cond;            // Engine wait on this when queue is empty
+    pthread_cond_t completion_cond; // Main thread waits on this in MPI_Wait
 } RequestQueue;
 
 extern RequestQueue engine_queue;

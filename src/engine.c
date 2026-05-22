@@ -85,6 +85,7 @@ void *progress_engine_loop(void *arg)
                 write_all(dest_fd, req->buffer, payload_bytes);
 
                 req->is_complete = 1;
+                pthread_cond_broadcast(&engine_queue.completion_cond);
             }
             else if (req->type == REQ_RECV)
             {
@@ -105,6 +106,7 @@ void *progress_engine_loop(void *arg)
 
                     // marked request as complete so that MPI_Wait can unblock Main thread
                     req->is_complete = 1;
+                    pthread_cond_broadcast(&engine_queue.completion_cond);
                 }
                 else
                 {
@@ -163,6 +165,7 @@ void *progress_engine_loop(void *arg)
                             printf("[Engine] Incoming message matched acive MPI_Irecv, routing to user buffer.\n");
                             read_all(active_fd, waiting_req->buffer, incoming_header.data_length);
                             waiting_req->is_complete = 1;
+                            pthread_cond_broadcast(&engine_queue.completion_cond);
                         }
                         else
                         {
