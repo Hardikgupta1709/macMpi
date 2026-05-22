@@ -9,15 +9,31 @@ include_directories(include)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # MPI library
-add_library(mpi src/mpi.c src/engine.c)
+add_library(mpi
+    src/mpi.c
+    src/engine.c
+)
 
 # mpirun executable
-add_executable(mpirun src/mpirun.c)
+add_executable(mpirun
+    src/mpirun.c
+)
+target_link_libraries(mpirun mpi)
 
-# test executable
-add_executable(test_engine tests/test_engine.c)
+# test_engine executable
+add_executable(test_engine
+    tests/test_engine.c
+)
 target_link_libraries(test_engine mpi)
 
 # hello test
-add_executable(hello_env tests/hello_env.c)
+add_executable(hello_env
+    tests/hello_env.c
+)
 target_link_libraries(hello_env mpi)
+
+# kqueue test
+add_executable(test_kqueue
+    tests/test_kqueue.c
+)
+target_link_libraries(test_kqueue mpi)

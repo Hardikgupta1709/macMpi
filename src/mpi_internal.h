@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "../include/mpi.h"
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
 
 typedef struct __attribute__((aligned(64)))
 {
@@ -36,13 +39,6 @@ typedef struct
     UMQ_Node *umq_tail; // Tail of the unexpected Message Queue
 
 } MPI_GlobalState;
-
-RequestQueue engine_queue = {
-    NULL,
-    NULL,
-    PTHREAD_MUTEX_INITIALIZER,
-    PTHREAD_COND_INITIALIZER,
-    PTHREAD_COND_INITIALIZER};
 
 extern MPI_GlobalState g_mpi_state;
 
