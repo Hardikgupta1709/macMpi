@@ -12,6 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_library(mpi
     src/mpi.c
     src/engine.c
+    src/collectives.c
 )
 
 # mpirun executable
@@ -40,7 +41,12 @@ add_executable(test_kqueue
 target_link_libraries(test_kqueue mpi)
 
 add_executable(test_barrier
-    tests/test_barrier.c
-    src/collectives.c    
+    tests/test_barrier.c   
 )
 target_link_libraries(test_barrier mpi)
+
+add_executable(test_bcast
+    tests/test_bcast.c
+    src/collectives.c
+)
+target_link_libraries(test_bcast mpi)
