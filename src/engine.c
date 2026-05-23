@@ -171,6 +171,7 @@ void *progress_engine_loop(void *arg)
 
                 if (read(active_fd, &incoming_header, sizeof(MPI_Header)) > 0)
                 {
+                    fprintf(stderr, "[Debug] Incoming Packet: Source = %d, Tag =%d\n", incoming_header.source, incoming_header.tag);
                     struct MPI_Request_int *waiting_req = match_active_receive(incoming_header.source, incoming_header.tag);
 
                     if (waiting_req != NULL)

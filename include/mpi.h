@@ -46,4 +46,8 @@ int MPI_Send(const void *buff, int count, MPI_Datatype datatype, int dest, int t
 
 int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Status *status);
 
+int MPI_Barrier(MPI_Comm comm);
+
+int MPI_Bcast(void *buffer, int count, MPI_Datatype datatype, int root, MPI_Comm comm);
+
 #endif
