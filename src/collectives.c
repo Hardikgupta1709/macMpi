@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 
 // Internal library tag to prevent collision with user messages
 #define MPI_TAG_BARRIER 9999
@@ -215,5 +216,164 @@ int MPI_Bcast(void *buffer, int count, MPI_Datatype datatype, int root, MPI_Comm
             MPI_Wait(&recv_req, MPI_STATUS_IGNORE);
         }
     }
+    return MPI_SUCCESS;
+}
+
+// Internal helper for MPI_Reduce
+
+static void apply_reduction_op(const void *inbuf, void *inoutbuf, int count, MPI_Datatype datatype, MPI_Op op)
+{
+    if (datatype == MPI_INT)
+    {
+        const int *in = (const int *)inbuf;
+        int *inout = (int *)inoutbuf;
+
+        for (int i = 0; i < count; i++)
+        {
+            switch (op)
+            {
+            case MPI_SUM:
+                inout[i] += in[i];
+                break;
+            case MPI_PROD:
+                inout[i] *= in[i];
+                break;
+            case MPI_MAX:
+                if (in[i] > inout[i])
+                {
+                    inout[i] = in[i];
+                }
+                break;
+            case MPI_MIN:
+                if (in[i] < inout[i])
+                {
+                    inout[i] = in[i];
+                }
+                break;
+            }
+        }
+    }
+    else if (datatype == MPI_DOUBLE)
+    {
+        const double *in = (const double *)inbuf;
+        double *inout = (double *)inoutbuf;
+
+        for (int i = 0; i < count; i++)
+        {
+            switch (op)
+            {
+            case MPI_SUM:
+                inout[i] += in[i];
+                break;
+            case MPI_PROD:
+                inout[i] *= in[i];
+                break;
+            case MPI_MAX:
+                if (in[i] > inout[i])
+                {
+                    inout[i] = in[i];
+                }
+                break;
+            case MPI_MIN:
+                if (in[i] > inout[i])
+                {
+                    inout[i] = in[i];
+                }
+                break;
+            }
+        }
+    }
+}
+
+static int get_dt_size(MPI_Datatype dt)
+{
+    if (dt == MPI_INT)
+    {
+        return sizeof(int);
+    }
+    if (dt == MPI_FLOAT)
+    {
+        return sizeof(float);
+    }
+    if (dt == MPI_DOUBLE)
+    {
+        return sizeof(double);
+    }
+    return 1;
+}
+
+int MPI_Reduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype, MPI_Op op, int root, MPI_Comm comm)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    int size, rank;
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    // virtualised topology so root acts as rank 0
+    int v_rank = (rank - root + size) % size;
+    int v_left = (2 * v_rank) + 1;
+    int v_right = (2 * v_rank + 2);
+    int v_parent = (v_rank - 1) / 2;
+
+    // Physical targets
+    int p_left = (v_left + root) % size;
+    int p_right = (v_right + root) % size;
+    int p_parent = (v_parent + root) % size;
+
+    // buffer management
+    int byte_length = count * get_dt_size(datatype);
+
+    // work_bf starts as a copy of this process's own sendbuf
+    void *work_buf = malloc(byte_length);
+    memcpy(work_buf, sendbuf, byte_length);
+
+    // temp_recv is used strictly to catch incoming data form children
+    void *temp_recv = malloc(byte_length);
+    MPI_Request req;
+    MPI_Status status;
+
+    // data in phase ->bottom up
+
+    // A. wait for the left child
+    if (v_left < size)
+    {
+        MPI_Irecv(temp_recv, count, datatype, p_left, 9997, comm, &req);
+        MPI_Wait(&req, &status);
+
+        apply_reduction_op(temp_recv, work_buf, count, datatype, op);
+    }
+
+    // B. wait for the right child
+    if (v_right < size)
+    {
+        MPI_Irecv(temp_recv, count, datatype, p_right, 9997, comm, &req);
+        MPI_Wait(&req, &status);
+        apply_reduction_op(temp_recv, work_buf, count, datatype, op);
+    }
+
+    // C. forward up to Parent or to user's recvbuf
+    if (v_rank != 0)
+    {
+        // Not the root: send the accumulated work_buf up the tree
+        MPI_Isend(work_buf, count, datatype, p_parent, 9997, comm, &req);
+        MPI_Wait(&req, &status);
+    }
+    else
+    {
+        // the root
+        // copying to user's provided recvbuf
+        if (recvbuf != NULL)
+        {
+            memcpy(recvbuf, work_buf, byte_length);
+        }
+    }
+
+    free(work_buf);
+    free(temp_recv);
+
     return MPI_SUCCESS;
 }

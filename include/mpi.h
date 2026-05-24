@@ -23,6 +23,16 @@ typedef struct
     size_t _internal_count;
 } MPI_Status;
 
+typedef enum
+{
+    MPI_SUM,
+    MPI_MAX,
+    MPI_MIN,
+    MPI_PROD
+} MPI_Op;
+
+int MPI_Reduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype, MPI_Op op, int root, MPI_Comm comm);
+
 #define MPI_STATUS_IGNORE ((MPI_Status *)0)
 int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm, MPI_Request *request);
 int MPI_Irecv(void *buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Request *request);

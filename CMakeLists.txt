@@ -50,3 +50,8 @@ add_executable(test_bcast
     src/collectives.c
 )
 target_link_libraries(test_bcast mpi)
+
+add_executable(test_reduce
+    tests/test_reduce.c
+)
+target_link_libraries(test_reduce mpi)
