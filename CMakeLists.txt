@@ -55,3 +55,9 @@ add_executable(test_reduce
     tests/test_reduce.c
 )
 target_link_libraries(test_reduce mpi)
+
+
+add_executable(test_scatter
+    tests/test_scatter.c
+)
+target_link_libraries(test_scatter mpi)

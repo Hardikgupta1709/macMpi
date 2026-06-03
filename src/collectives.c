@@ -46,11 +46,13 @@ static int barrier_dissemination(MPI_Comm comm)
         int send_to = (rank + jump) % size;
         int recv_from = (rank - jump + size) % size;
 
+        int round_tag = MPI_TAG_BARRIER + k;
+
         // 1. Dispatching the non-blocking send
-        MPI_Isend(&dummy, 0, MPI_INT, send_to, MPI_TAG_BARRIER, comm, &req);
+        MPI_Isend(&dummy, 0, MPI_INT, send_to, round_tag, comm, &req);
 
         // 2. Block and wait for required incoming signal
-        MPI_Recv(&dummy, 0, MPI_INT, recv_from, MPI_TAG_BARRIER, comm, MPI_STATUS_IGNORE);
+        MPI_Recv(&dummy, 0, MPI_INT, recv_from, round_tag, comm, MPI_STATUS_IGNORE);
 
         // 3. ensuring our outbound message successfully left the socket
         MPI_Wait(&req, MPI_STATUS_IGNORE);
@@ -375,5 +377,68 @@ int MPI_Reduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datat
     free(work_buf);
     free(temp_recv);
 
+    return MPI_SUCCESS;
+}
+
+int MPI_Scatter(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, int root, MPI_Comm comm)
+{
+    // Fetch current process state
+
+    int rank, size;
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &size);
+
+    if (sendcount != recvcount || get_dt_size(sendtype) != get_dt_size(recvtype))
+    {
+        // symmetric scatter counts
+        return MPI_ERR_TRUNCATE;
+    }
+
+    size_t chunk_size_bytes = sendcount * get_dt_size(sendtype);
+
+    if (rank == root)
+    {
+        // Root process : the asynchronous burst
+
+        // Allocating request tracker for non blocking engine
+        MPI_Request *reqs = (MPI_Request *)malloc(sizeof(MPI_Request) * size);
+        int req_count = 0;
+
+        char *base_send_ptr = (char *)sendbuf;
+
+        for (int i = 0; i < size; i++)
+        {
+            if (i == root)
+            {
+                // Local copy for the root itself
+                memcpy(recvbuf, base_send_ptr + (i * chunk_size_bytes), chunk_size_bytes);
+            }
+            else
+            {
+                // exact memory offset for process 'i
+                void *target_payload = base_send_ptr + (i * chunk_size_bytes);
+
+                MPI_Isend(target_payload, sendcount, sendtype, i, MPI_TAG_SCATTER, comm, &reqs[req_count]);
+                req_count++;
+            }
+        }
+
+        // Waiting for the background engine to drain all the data to the socket pair
+
+        MPI_Status status;
+        for (int i = 0; i < req_count; i++)
+        {
+            MPI_Wait(&reqs[i], &status);
+        }
+
+        free(reqs);
+    }
+    else
+    {
+        // Leaf processes -> wait for data
+
+        MPI_Status status;
+        MPI_Recv(recvbuf, recvcount, recvtype, root, MPI_TAG_SCATTER, comm, &status);
+    }
     return MPI_SUCCESS;
 }
