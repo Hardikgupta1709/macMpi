@@ -141,42 +141,17 @@ int write_all(int fd, const void *buffer, size_t length)
 
 int MPI_Send(const void *buf, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm)
 {
+
     if (!g_mpi_state.initialized)
-    {
         return MPI_ERR_OTHER;
-    }
 
-    if (dest < 0 || dest >= g_mpi_state.size || dest == g_mpi_state.rank)
-    {
-        return MPI_ERR_OTHER;
-    }
+    MPI_Request req;
 
-    int socket_fd = g_mpi_state.peer_sockets[dest];
+    // 1. Push the payload to the Engine's outbound queue
+    MPI_Isend(buf, count, datatype, dest, tag, comm, &req);
 
-    // calculating the payload size
-    size_t type_size = (datatype == MPI_INT) ? sizeof(int) : 1;
-    size_t payload_bytes = count * type_size;
-
-    // constructing the 64-byte envelope
-    MPI_Header header;
-    header.magic = 0x4D504931;
-    header.source = g_mpi_state.rank;
-    header.dest = dest;
-    header.tag = tag;
-    header.type = datatype;
-    header.count = count;
-    header.data_length = payload_bytes;
-
-    // pushing the envelope the across the socket
-    if (write_all(socket_fd, &header, sizeof(MPI_Header)) != 0)
-    {
-        return MPI_ERR_OTHER;
-    }
-
-    if (write_all(socket_fd, buf, payload_bytes) != 0)
-    {
-        return MPI_ERR_OTHER;
-    }
+    // 2. Wait for the background thread to finish the socket transfer
+    MPI_Wait(&req, MPI_STATUS_IGNORE);
 
     return MPI_SUCCESS;
 }
@@ -223,167 +198,17 @@ int read_all(int fd, void *buffer, size_t length)
 int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Status *status)
 {
     if (!g_mpi_state.initialized)
-    {
         return MPI_ERR_OTHER;
-    }
 
-    // 1. Checking the Unexpected message queue
-    UMQ_Node *curr = g_mpi_state.umq_head;
-    UMQ_Node *prev = NULL;
+    MPI_Request req;
 
-    while (curr != NULL)
-    {
-        if (is_match(source, tag, curr->header.source, curr->header.tag))
-        {
-            // Found a Match in queue
+    // 1. Dispatch the request to the Engine's Two-Way Matching system
+    MPI_Irecv(buf, count, datatype, source, tag, comm, &req);
 
-            memcpy(buf, curr->payload, curr->header.data_length); // message copy from heap memory to user buffer
+    // 2. Safely put the Main Thread to sleep until the Engine wakes it up
+    MPI_Wait(&req, status);
 
-            if (status != NULL)
-            {
-                status->MPI_SOURCE = curr->header.source;
-                status->MPI_TAG = curr->header.tag;
-                status->MPI_ERROR = MPI_SUCCESS;
-                status->_internal_count = curr->header.data_length;
-            }
-
-            // unlinking this node from the linked list
-            if (prev == NULL)
-            {
-                g_mpi_state.umq_head = curr->next;
-            }
-            else
-            {
-                prev->next = curr->next;
-            }
-
-            free(curr->payload);
-            free(curr);
-
-            return MPI_SUCCESS;
-        }
-
-        // moving to next node if their in no match
-        prev = curr;
-        curr = curr->next;
-    }
-
-    // 2. Draining the Sockets
-
-    while (1)
-    {
-        int active_fd = -1;
-
-        // Determining which socket to read from
-        if (source >= 0)
-        {
-            active_fd = g_mpi_state.peer_sockets[source];
-        }
-        else
-        {
-            // source  == MPI_ANY_SOURCE (Watching all the sockets for the message)
-
-            struct pollfd *fds = malloc(g_mpi_state.size * sizeof(struct pollfd));
-            int num_fds = 0;
-
-            for (int i = 0; i < g_mpi_state.size; i++)
-            {
-                if (i != g_mpi_state.rank && g_mpi_state.peer_sockets[i] != -1)
-                {
-                    fds[num_fds].fd = g_mpi_state.peer_sockets[i];
-                    fds[num_fds].events = POLLIN;
-                    num_fds++;
-                }
-            }
-
-            // Blocking the process until at least one socket has data
-            int ret = poll(fds, num_fds, -1);
-            if (ret < 0)
-            {
-                free(fds);
-                return MPI_ERR_OTHER;
-            }
-
-            for (int i = 0; i < num_fds; i++)
-            {
-                if (fds[i].revents & POLLIN)
-                {
-                    active_fd = fds[i].fd;
-                    break;
-                }
-            }
-            free(fds);
-        }
-
-        MPI_Header incoming_header;
-
-        // Reading the 64-Byte envelope
-        read_all(active_fd, &incoming_header, sizeof(MPI_Header));
-
-        struct MPI_Request_int *waiting_req = match_active_receive(incoming_header.source, incoming_header.tag);
-
-        if (waiting_req != NULL)
-        {
-            printf("[Engine] Incoming message matched active MPI_Irecv, routing to user buffer.\n");
-            read_all(active_fd, waiting_req->buffer, incoming_header.data_length);
-            waiting_req->is_complete = 1;
-        }
-        else
-        {
-            printf("[Engine] No active receive found. Routing to UMQ.\n");
-
-            struct UMQ_Node *new_node = malloc(sizeof(struct UMQ_Node));
-            new_node->header = incoming_header;
-            new_node->payload = malloc(incoming_header.data_length);
-
-            read_all(active_fd, new_node->payload, incoming_header.data_length);
-        }
-
-        if (is_match(source, tag, incoming_header.source, incoming_header.tag))
-        {
-
-            read_all(active_fd, buf, incoming_header.data_length);
-
-            if (status != NULL)
-            {
-                status->MPI_SOURCE = incoming_header.source;
-                status->MPI_TAG = incoming_header.tag;
-                status->MPI_ERROR = MPI_SUCCESS;
-                status->_internal_count = incoming_header.data_length;
-            }
-            return MPI_SUCCESS;
-        }
-        else
-        {
-            // NO Match, some another ones message
-
-            // Draining the socket to prevent deadlock and save to UMQ;
-
-            void *unexpected_payload = malloc(incoming_header.data_length);
-            read_all(active_fd, unexpected_payload, incoming_header.data_length);
-
-            // creating the new linked list node
-            UMQ_Node *new_node = malloc(sizeof(UMQ_Node));
-            new_node->header = incoming_header;
-            new_node->payload = unexpected_payload;
-            new_node->next = NULL;
-
-            // appending to the end of UMQ
-            if (g_mpi_state.umq_head == NULL)
-            {
-                g_mpi_state.umq_head = new_node;
-            }
-            else
-            {
-                UMQ_Node *tail = g_mpi_state.umq_head;
-                while (tail->next != NULL)
-                {
-                    tail = tail->next;
-                }
-                tail->next = new_node;
-            }
-        }
-    }
+    return MPI_SUCCESS;
 }
 
 int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int tag, MPI_Comm comm, MPI_Request *request)
