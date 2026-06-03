@@ -40,6 +40,24 @@ typedef struct
 
 } MPI_GlobalState;
 
+static inline size_t get_type_size(MPI_Datatype type)
+{
+    switch (type)
+    {
+    case MPI_INT:
+        return sizeof(int);
+    case MPI_FLOAT:
+        return sizeof(float);
+    case MPI_DOUBLE:
+        return sizeof(double);
+    case MPI_CHAR:
+        return sizeof(char);
+    case MPI_BYTE:
+        return 1;
+    default:
+        return 0;
+    }
+}
 extern MPI_GlobalState g_mpi_state;
 
 int write_all(int fd, const void *buffer, size_t length);

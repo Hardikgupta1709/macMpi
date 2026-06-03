@@ -108,8 +108,10 @@ void *progress_engine_loop(void *arg)
                 write_all(dest_fd, &header, sizeof(MPI_Header));
                 write_all(dest_fd, req->buffer, payload_bytes);
 
+                pthread_mutex_lock(&engine_queue.mutex);
                 req->is_complete = 1;
                 pthread_cond_broadcast(&engine_queue.completion_cond);
+                pthread_mutex_unlock(&engine_queue.mutex);
             }
             else if (req->type == REQ_RECV)
             {
@@ -129,8 +131,10 @@ void *progress_engine_loop(void *arg)
                     free(matched_node);
 
                     // marked request as complete so that MPI_Wait can unblock Main thread
+                    pthread_mutex_lock(&engine_queue.mutex);
                     req->is_complete = 1;
                     pthread_cond_broadcast(&engine_queue.completion_cond);
+                    pthread_mutex_unlock(&engine_queue.mutex);
                 }
                 else
                 {
@@ -179,8 +183,10 @@ void *progress_engine_loop(void *arg)
                         printf("[Engine] kqueue event: Matched active MPI_Irecv, routing to user.\n");
                         read_all(active_fd, waiting_req->buffer, incoming_header.data_length);
 
+                        pthread_mutex_lock(&engine_queue.mutex);
                         waiting_req->is_complete = 1;
                         pthread_cond_broadcast(&engine_queue.completion_cond); // wake up mpi wait
+                        pthread_mutex_unlock(&engine_queue.mutex);
                     }
                     else
                     {

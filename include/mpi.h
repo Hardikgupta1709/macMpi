@@ -3,9 +3,10 @@
 
 #define MPI_SUCCESS 0
 #define MPI_ERR_OTHER -1
+#define MPI_ERR_TRUNCATE 14
 #define MPI_ANY_SOURCE -1
 #define MPI_ANY_TAG -1
-
+#define MPI_TAG_SCATTER 99993
 #include <stddef.h>
 
 // Defining MPI_Comm as an integer handle so that it prevents the user form trying to access internal routing tables
@@ -43,6 +44,7 @@ int MPI_Test(MPI_Request *request, int *flag, MPI_Status *status);
 #define MPI_FLOAT 2
 #define MPI_DOUBLE 3
 #define MPI_CHAR 4
+#define MPI_BYTE 5
 
 // predefined communicator to identify the world communicator
 #define MPI_COMM_WORLD ((MPI_Comm)0x4444)
@@ -59,5 +61,7 @@ int MPI_Recv(void *buf, int count, MPI_Datatype datatype, int source, int tag, M
 int MPI_Barrier(MPI_Comm comm);
 
 int MPI_Bcast(void *buffer, int count, MPI_Datatype datatype, int root, MPI_Comm comm);
+
+int MPI_Scatter(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, int root, MPI_Comm comm);
 
 #endif
