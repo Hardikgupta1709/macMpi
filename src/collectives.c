@@ -10,6 +10,8 @@
 
 #define MPI_TAG_BCAST 9998
 
+#define MPI_TAG_GATHER 9996
+
 #define SAFE_MOD(a, b) (((a) % (b) + (b)) % (b))
 
 // calculates ceil(log2(size)) using bitwise integer math, runs in ALU in less than a nanosecond
@@ -439,6 +441,57 @@ int MPI_Scatter(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void 
 
         MPI_Status status;
         MPI_Recv(recvbuf, recvcount, recvtype, root, MPI_TAG_SCATTER, comm, &status);
+    }
+    return MPI_SUCCESS;
+}
+
+int MPI_Gather(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, int root, MPI_Comm comm)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    int size, rank;
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    if (rank == root)
+    {
+        size_t extent = get_dt_size(recvtype) * recvcount;
+
+        MPI_Request *reqs = (MPI_Request *)malloc(sizeof(MPI_Request) * size);
+
+        for (int i = 0; i < size; i++)
+        {
+            char *recv_offset = (char *)recvbuf + (i * extent);
+
+            if (i == root)
+            {
+                memcpy(recv_offset, sendbuf, sendcount * get_dt_size(sendtype));
+                reqs[i] = MPI_REQUEST_NULL;
+            }
+            else
+            {
+                MPI_Irecv(recv_offset, recvcount, recvtype, i, MPI_TAG_GATHER, comm, &reqs[i]);
+            }
+        }
+
+        for (int i = 0; i < size; i++)
+        {
+            if (reqs[i] != MPI_REQUEST_NULL)
+            {
+                MPI_Wait(&reqs[i], MPI_STATUS_IGNORE);
+            }
+        }
+
+        free(reqs);
+    }
+    else
+    {
+        MPI_Request req;
+        MPI_Isend(sendbuf, sendcount, sendtype, root, MPI_TAG_GATHER, comm, &req);
+        MPI_Wait(&req, MPI_STATUS_IGNORE);
     }
     return MPI_SUCCESS;
 }
