@@ -495,3 +495,31 @@ int MPI_Gather(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *
     }
     return MPI_SUCCESS;
 }
+
+int MPI_Allgather(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, MPI_Comm comm)
+{
+    if (!g_mpi_state.initialized)
+    {
+        return MPI_ERR_OTHER;
+    }
+
+    int rank, size;
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    // gathering all the data to an internal root
+    int err = MPI_Gather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, 0, comm);
+
+    if (err != MPI_SUCCESS)
+    {
+        return err;
+    }
+
+    // total payload size to broadcast
+    int total_elements = recvcount * size;
+
+    // bcast the fully concatenated array from internal root to every other root
+    err = MPI_Bcast(recvbuf, total_elements, recvtype, 0, comm);
+
+    return err;
+}

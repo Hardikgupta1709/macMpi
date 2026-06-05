@@ -65,3 +65,8 @@ add_executable(test_gather
     tests/test_gather.c    
 )
 target_link_libraries(test_gather mpi)
+
+add_executable(test_allgather
+    tests/test_allgather.c
+)
+target_link_libraries(test_allgather mpi)
