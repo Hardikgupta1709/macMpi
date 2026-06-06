@@ -70,3 +70,8 @@ add_executable(test_allgather
     tests/test_allgather.c
 )
 target_link_libraries(test_allgather mpi)
+
+add_executable(test_allreduce
+    tests/test_allreduce.c
+)
+target_link_libraries(test_allreduce mpi)

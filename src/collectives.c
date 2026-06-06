@@ -523,3 +523,25 @@ int MPI_Allgather(const void *sendbuf, int sendcount, MPI_Datatype sendtype, voi
 
     return err;
 }
+
+int MPI_Allreduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype, MPI_Op op, MPI_Comm comm)
+{
+    if (!g_mpi_state.initialized)
+    {
+        fprintf(stderr, "[MPI Fatal] Cannot call MPI_Allreduce before MPI_Init.\n");
+        return MPI_ERR_OTHER;
+    }
+
+    // Using rank 0 as the convergence point for the inverse tree
+    int reduce_status = MPI_Reduce(sendbuf, recvbuf, count, datatype, op, 0, comm);
+
+    if (reduce_status != MPI_SUCCESS)
+    {
+        return reduce_status;
+    }
+
+    // now rank 0 has final answer in recvbuf , we broadcast it
+    int bcast_status = MPI_Bcast(recvbuf, count, datatype, 0, comm);
+
+    return bcast_status;
+}
