@@ -7,6 +7,7 @@
 #define MPI_ANY_SOURCE -1
 #define MPI_ANY_TAG -1
 #define MPI_TAG_SCATTER 99993
+#define MPI_TAG_ALLTOALL 9994
 #include <stddef.h>
 
 // Defining MPI_Comm as an integer handle so that it prevents the user form trying to access internal routing tables
@@ -69,4 +70,7 @@ int MPI_Gather(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *
 int MPI_Allgather(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, MPI_Comm comm);
 
 int MPI_Allreduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype, MPI_Op op, MPI_Comm comm);
+
+int MPI_Alltoall(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, MPI_Comm comm);
+
 #endif

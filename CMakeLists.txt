@@ -75,3 +75,8 @@ add_executable(test_allreduce
     tests/test_allreduce.c
 )
 target_link_libraries(test_allreduce mpi)
+
+add_executable(test_alltoall
+    tests/test_alltoall.c
+)
+target_link_libraries(test_alltoall mpi)

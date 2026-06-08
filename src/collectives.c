@@ -545,3 +545,59 @@ int MPI_Allreduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype da
 
     return bcast_status;
 }
+
+int MPI_Alltoall(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, MPI_Comm comm)
+{
+    int rank, size;
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &size);
+
+    size_t send_bytes = sendcount * sizeof(int);
+    size_t recv_bytes = recvcount * sizeof(int);
+
+    int num_requests = 2 * (size - 1);
+    MPI_Request *requests = malloc(num_requests * sizeof(MPI_Request));
+    int req_idx = 0;
+
+    // 1. The self copy -> not directly sending data over socket to ourselves, just doing a direct self copy
+    void *recv_target = (char *)recvbuf + (rank * recv_bytes);
+    const void *send_source = (const char *)sendbuf + (rank * send_bytes);
+    memcpy(recv_target, send_source, send_bytes);
+
+    // 2. Post for all non-blocking receives first
+    for (int i = 0; i < size; i++)
+    {
+        if (i == rank)
+        {
+            continue; // skip ourselves
+        }
+
+        // Exactly where in the receive buffer this incoming chunk belongs
+        void *recv_offset = (char *)recvbuf + (i * recv_bytes);
+
+        MPI_Irecv(recv_offset, recvcount, recvtype, i, MPI_TAG_ALLTOALL, comm, &requests[req_idx++]);
+    }
+
+    // 3. Post all the Non-Blocking sends
+    for (int i = 0; i < size; i++)
+    {
+        if (i == rank)
+        {
+            continue;
+        }
+
+        const void *send_offset = (const char *)sendbuf + (i * send_bytes);
+
+        // Pushing the transfer to the background again
+        MPI_Isend(send_offset, sendcount, sendtype, i, MPI_TAG_ALLTOALL, comm, &requests[req_idx++]);
+    }
+
+    // 4. synchronize the whole thing i.e. blocking the main thread until kqueue engine finishes all 2*(N-1) transfers
+    for (int i = 0; i < num_requests; i++)
+    {
+        MPI_Wait(&requests[i], MPI_STATUS_IGNORE);
+    }
+
+    free(requests);
+    return MPI_SUCCESS;
+}
