@@ -1,95 +1,93 @@
-# macMPI: Production-Grade MPI for Apple Silicon
+# macMPI: High-Performance MPI-1.1 Implementation for macOS Architecture
 
-![Language](https://img.shields.io/badge/Language-C11-blue.svg)
-![Platform](https://img.shields.io/badge/Platform-macOS%20%28M--Series%29-black.svg)
-![Build](https://img.shields.io/badge/Build-CMake%20%2B%20Ninja-success.svg)
+[![C Standard](https://img.shields.io/badge/Language-C11-blue.svg)](https://en.wikipedia.org/wiki/C11_(C_standard_revision))
+[![Platform Support](https://img.shields.io/badge/Platform-macOS%20%28M--Series%29-black.svg)](https://developer.apple.com/apple-silicon/)
+[![Build System](https://img.shields.io/badge/Build-CMake%20%2B%20Ninja-success.svg)](https://ninja-build.org/)
 
-**macMPI** (formerly _mpi-lite_) is a high-performance, single-node implementation of the MPI-1.1 standard built from scratch. Designed explicitly for macOS and optimized for Apple Silicon (M-Series), this project bypasses the shortcuts of a "toy library" to provide a production-hardened distributed systems environment.
+**macMPI** is a low-latency, single-node implementation of the MPI-1.1 specification, engineered specifically for XNU/Darwin kernels and optimized for Apple Silicon (M-Series unified memory architectures). Designed to operate without high-level runtime reliance, `macMPI` handles process coordination, message routing, and event multiplexing using bare-metal POSIX and macOS-native kernel primitives.
 
-It features a custom process manager, a full-mesh Unix Domain Socket topology, and a highly concurrent, zero-copy, non-blocking progress engine powered by native macOS `kqueue`.
-
-## Architectural Milestones & Features
-
-### 1. Process Management (`mpirun`)
-
-A standalone daemon engineered to securely spawn, manage, and tear down a universe of distributed clones.
-
-- **Environment Injection:** Safe `fork()` and `execvp()` boundaries with dynamic environment variable injection (e.g., `MPI_RANK`, `MPI_UNIVERSE_SIZE`).
-- **I/O Multiplexing:** Completely eliminates Head-of-Line blocking. Captures all child output via POSIX Pipes (`pipe()`, `dup2()`) and routes it through an event-driven `poll()` loop to the terminal.
-- **Graceful Teardown:** Advanced signal handlers (`SIGINT`, `SIGCHLD`) to intercept user terminations, safely assassinate child clones, and prevent zombie/orphaned processes.
-
-### 2. Point-to-Point Communication
-
-A robust data-movement layer built over a full-duplex Unix Domain Socket mesh.
-
-- **Smart Envelope Plumbing:** 64-byte routing headers to ensure precise network delivery.
-- **Kernel-Safe Transfers:** Strict return-value checking and pointer arithmetic to handle partial `write()` returns and OS socket buffer bottlenecks.
-- **Wildcard & UMQ Engine:** Full support for `MPI_ANY_SOURCE` and `MPI_ANY_TAG` with an internal Unexpected Message Queue (UMQ) that safely buffers out-of-order packets without crashing the kernel.
-
-### 3. The Non-Blocking Progress Engine (The Crown Jewel)
-
-True compute-communication overlap. This multithreaded backend ensures the user's main program can crunch math while gigabytes of data transfer in the background.
-
-- **Hardware-Optimized Threads:** A shadow `pthread` physically pinned to Apple Silicon's Performance Cores using `pthread_set_qos_class_self_np`.
-- **$O(1)$ Event Polling:** Ripped out the slow `poll()` loop and implemented native macOS `kqueue()` / `kevent()`, allowing the background thread to monitor hundreds of sockets with zero CPU overhead.
-- **Two-Way Matching:** Implements `MPI_Isend`, `MPI_Irecv`, and `MPI_Wait`, utilizing thread-safe linked lists protected by Mutexes and Condition Variables.
-
-### 4. Advanced Collective Operations
-
-Decentralized, mathematically optimized network topologies that eliminate the $O(N)$ traffic jams of centralized architectures.
-
-- **Dissemination Barrier (`MPI_Barrier`):** $O(\log_2 N)$ synchronization using bitwise integer math.
-- **Binomial Broadcast (`MPI_Bcast`):** Efficient data replication across a dynamically generated binomial tree.
-- **Asynchronous Burst Scatter & Gather:** Leverages the `kqueue` engine to issue simultaneous non-blocking transfers for `MPI_Scatter` and `MPI_Gather`.
-- **Compound Operations:** Flawless composition of primitives for `MPI_Allgather` and `MPI_Alltoall` (Distributed Matrix Transpose).
-- **Inverse Reduction Tree (`MPI_Reduce` & `MPI_Allreduce`):** Distributed ALU computations (Sum, Max, Min, Prod) executed at every junction of the tree before propagating to the Root.
+The library features a decentralized process manager, a full-mesh IPC topology over Unix Domain Sockets, and a highly concurrent, multi-threaded progress engine driven by native `kqueue` event notifications to maximize compute-communication overlap.
 
 ---
 
-## Technical Stack
+## Architectural Implementation Details
 
-- **Language:** C (Standard C11)
-- **OS/Hardware:** macOS (XNU/Darwin), Apple Silicon
-- **Build System:** CMake + Ninja
-- **System Primitives:** `kqueue`, `pthreads`, Unix Domain Sockets, POSIX Pipes/Signals
+### 1. Decentralized Process Management (`mpirun`)
+
+The execution environment is driven by a custom runtime daemon responsible for process lifecycle orchestration, virtual topology construction, and terminal I/O streaming.
+
+* **Runtime Environment Injection:** Implements robust process separation via `fork()` and `execvp()` boundaries. The daemon safely maps topological metadata (e.g., `MPI_RANK`, `MPI_UNIVERSE_SIZE`) and abstract communication maps directly into target address spaces before payload initialization.
+* **Non-Blocking Stream Multiplexing:** Completely isolates child standard output (`stdout`/`stderr`) using unidirectional POSIX pipes (`pipe()`, `dup2()`). Reads are non-blocking and multiplexed through an event-driven `poll()` daemon loop, eliminating Head-of-Line (HoL) blocking across standard streams.
+* **Asynchronous Lifecycle Control:** Employs precise signal management (`SIGINT`, `SIGCHLD`) to coordinate graceful cascading tear-downs, ensuring all isolated process trees are collected without producing orphaned or zombie processes.
+
+### 2. Point-to-Point Messaging Layer
+
+The point-to-point layer establishes an explicit communication fabric using a full-duplex Unix Domain Socket mesh.
+
+* **Fixed-Overhead Routing Envelopes:** Every communication transaction prefixes a standardized 64-byte metadata header containing explicit source, target, tag, and payload bounds to assure deterministic matching.
+* **Kernel-Safe Flow Regulation:** Points of egress implement strict loop-driven buffer adjustments to mitigate partial system writes (`write()`), preventing deadlocks arising from XNU kernel socket buffer constraints during saturated transmission bursts.
+* **Unexpected Message Buffering (UMQ):** Full compliance with `MPI_ANY_SOURCE` and `MPI_ANY_TAG` wildcards. Messages received out-of-order are extracted immediately from kernel buffers and queued into a heap-allocated Unexpected Message Queue (UMQ) to protect network resources.
+
+### 3. Asynchronous Progress Engine
+
+To achieve deterministic compute-communication overlap, `macMPI` decouples user execution flows from the transport medium via an independent background execution subsystem.
+
+* **Hardware Core Affirmation:** Spawns a dedicated POSIX shadow thread (`pthread`) explicitly bound to macOS Performance Cores utilizing Apple-specific Quality of Service APIs (`pthread_set_qos_class_self_np`).
+* **$O(1)$ Event Despatching:** Leverages macOS kernel event queues (`kqueue`/`kevent`) with `EVFILT_READ` configurations. This circumvents linear polling limits, enabling zero-CPU-overhead socket state observation across dense rank meshes.
+* **Thread-Safe Concurrency Architecture:** Implements non-blocking APIs (`MPI_Isend`, `MPI_Irecv`, `MPI_Wait`, `MPI_Test`) using a highly disciplined synchronization model managed via mutual exclusions (`pthread_mutex_t`) and condition primitives (`pthread_cond_t`).
+
+### 4. Optimized Collective Suites
+
+`macMPI` bypasses centralized "star" topologies to protect the Root rank from structural bottlenecks, routing collective operations through decentralized data-movement paths instead.
+
+* **Dissemination Barrier (`MPI_Barrier`):** Implements synchronization spanning an $O(\log_2 N)$ communications curve driven by bitwise index shifts.
+* **Binomial Tree Broadcast (`MPI_Bcast`):** Replicates algorithmic data arrays through dynamically instantiated binomial tree topologies, ensuring uniform bandwidth allocation.
+* **Asynchronous Slice Allocation (`MPI_Scatter` / `MPI_Gather`):** Leverages pointer arithmetic and non-blocking engines to execute synchronous matrix slice dispersal and ordered array collections across generic memory layouts.
+* **Compound Collective Topology:** Builds clean behavioral composition layers for global distribution operations, including `MPI_Allgather` and distributed matrix transpositions via `MPI_Alltoall`.
+* **Inverse Tree Reductions (`MPI_Reduce` / `MPI_Allreduce`):** Distributes Arithmetic Logic Unit (ALU) evaluations (such as `MPI_SUM`, `MPI_MAX`, `MPI_MIN`, `MPI_PROD`) iteratively down structural nodes prior to Root delivery.
 
 ---
 
-## Current Status
+## Technical Architecture Stack
 
-- [x] **Phase 1: Process Management** - Complete.
-- [x] **Phase 2: Blocking Point-to-Point** - Complete.
-- [x] **Phase 3: Background Progress Engine (`kqueue`)** - Complete.
-- [x] **Phase 4: Foundational Collectives** - Complete.
-- [x] **Phase 5: Compound Collectives & Reduction** - Complete.
-
----
-
-## Roadmap & Future Work
-
-While the library is highly functional, high-performance computing is an endless pursuit of lower latency. The following features represent the next generation of `macMPI`:
-
-1. **POSIX Shared Memory (`mmap`) Transition:** Upgrading the intra-node transport layer. While Unix Domain Sockets are fast, true "Zero-Copy" requires mapping a shared POSIX memory file (`shm_open`) into the virtual memory space of all processes, completely bypassing the OS kernel for gigabyte-scale transfers.
-2. **Derived Datatypes Engine:** Implementing `MPI_Type_commit` and `MPI_Type_vector` to allow users to send non-contiguous data blocks and complex C structs dynamically.
-3. **Dynamic Sub-Groups (`MPI_Comm_split`):** Enabling the creation of isolated communicators dynamically at runtime to divide the computing cluster into specialized task forces.
-4. **Performance Profiling:** Benchmarking latency and bandwidth against standard HPC metrics to document gigabytes-per-second (GB/s) throughput limits on M-Series unified memory.
+* **Core Dialect:** ISO C11 (Strict compliance, zero third-party framework runtime dependencies).
+* **Operating Systems:** macOS 12.0+ (Darwin/XNU Kernel architecture).
+* **Target Architectures:** Apple Silicon ARM64 (M-Series Execution Optimizations).
+* **Prerequisites:** Apple Clang Compiler, CMake (>= 3.10), Ninja Build System.
 
 ---
 
-## How to Build & Run
+## Project Milestones
 
-### Prerequisites
+- [x] **Phase 1: Process Management & Lifecycle Daemon** — *Complete*
+- [x] **Phase 2: Synchronous Point-to-Point Fabric** — *Complete*
+- [x] **Phase 3: Multi-threaded Progress Subsystem (`kqueue` Integration)** — *Complete*
+- [x] **Phase 4: Foundational Distributed Collective Primitives** — *Complete*
+- [x] **Phase 5: Matrix Transform Operations & Reduction Suite** — *Complete*
 
-- Apple Clang (via Xcode Command Line Tools)
-- CMake (>= 3.10)
-- Ninja Build System
+---
 
-### Compilation
+## Architectural Optimization Roadmap
+
+1.  **POSIX Shared Memory (`mmap`) Migration:** Transitioning internal intra-node data transactions to memory-mapped POSIX files (`shm_open`). This design enhancement completely bypasses XNU kernel socket allocations for gigabyte-scale transfers, executing true zero-copy shared memory access.
+2.  **Dynamic Strided Datatype Subsystem:** Integrating abstract datatype compilation engines (`MPI_Type_commit`, `MPI_Type_vector`) to serialize and transmit non-contiguous memory structures and complex layouts.
+3.  **Dynamic Topology Partitioning (`MPI_Comm_split`):** Implementing runtime sub-group derivation to allow independent execution groups to compute along decoupled sub-communicator paths.
+4.  **HPC Metrics Validation:** Formal automated latency and bandwidth benchmarking mapping performance profiles directly against established unified-memory models.
+
+---
+
+## Installation & Execution
+
+### Build System Initialization
+
+Compile the library and runtime tools using CMake and the Ninja build manager:
 
 ```bash
+# Clone the repository
 git clone [https://github.com/yourusername/macMPI.git](https://github.com/yourusername/macMPI.git)
 cd macMPI
+
+# Configure and compile binary layers
 mkdir build && cd build
 cmake -G Ninja ..
 ninja
-```
