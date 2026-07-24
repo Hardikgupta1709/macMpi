@@ -8,6 +8,9 @@
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 typedef struct __attribute__((aligned(64)))
 {
@@ -18,7 +21,10 @@ typedef struct __attribute__((aligned(64)))
     MPI_Datatype type;
     int count;
     size_t data_length;
-    uint8_t padding[32];
+
+    uint8_t is_shm_payload;
+    size_t shm_offset; // Exact byte offset from shm_base_ptr where the receiver can find the data
+    uint8_t padding[23];
 } MPI_Header;
 
 typedef struct UMQ_Node
@@ -34,6 +40,14 @@ typedef struct
     int size;
     int *peer_sockets; // Dynamically allocated 1D array of inherited FD's
     int initialized;
+
+    int shm_fd;
+    void *shm_base_ptr;
+    size_t shm_size;
+
+    void *my_shm_slab;       // Pointer to the start of 64MB partition
+    size_t slab_size;        // Total size of rank's partition
+    size_t shm_write_offset; // counter for the track of the pointer i.e. where we are currently writing
 
     UMQ_Node *umq_head; // Head of the unexpected Message Queue
     UMQ_Node *umq_tail; // Tail of the unexpected Message Queue

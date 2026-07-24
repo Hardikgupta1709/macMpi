@@ -9,6 +9,7 @@
 #include <poll.h>
 #include <stddef.h>
 #include <sched.h>
+#include <time.h>
 
 MPI_GlobalState g_mpi_state = {-1, -1, NULL, 0, NULL};
 
@@ -18,6 +19,8 @@ int MPI_Init(int *argc, char ***argv)
     {
         return MPI_SUCCESS;
     }
+
+    const char *shm_name = "/macmpi_data_plane";
 
     // Reading environment variables injected by mpirun
     char *rank_str = getenv("MPI_RANK");
@@ -32,6 +35,53 @@ int MPI_Init(int *argc, char ***argv)
 
     g_mpi_state.rank = atoi(rank_str);
     g_mpi_state.size = atoi(size_str);
+
+    g_mpi_state.slab_size = 64 * 1024 * 1024; // Every proces gets exactly 64MB of RAM -> slab size
+
+    // Total size that scales with the adjusted number of processes
+    g_mpi_state.shm_size = g_mpi_state.slab_size * g_mpi_state.size;
+
+    if (g_mpi_state.rank == 0)
+    {
+        g_mpi_state.shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, 0666);
+        if (g_mpi_state.shm_fd == -1)
+        {
+            perror('[Rank 0] shm_open failed');
+            exit(EXIT_FAILURE);
+        }
+
+        if (ftruncate(g_mpi_state.shm_fd, g_mpi_state.shm_size) == -1)
+        {
+            perror("[Rank 0] ftruncate failed");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD); // synchronisation because rank 1..N cannot map the memory until Rank 0 has finished truncating it!
+
+    // Ranks 1..N open the already-created memory segment
+    if (g_mpi_state.rank != 0)
+    {
+        g_mpi_state.shm_fd = shm_open(shm_name, O_RDWR, 0666);
+        if (g_mpi_state.shm_fd == -1)
+        {
+            perror("shm_open (client) failed");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    g_mpi_state.shm_base_ptr = mmap(NULL, g_mpi_state.shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, g_mpi_state.shm_fd, 0);
+
+    if (g_mpi_state.shm_base_ptr == MAP_FAILED)
+    {
+        perror("mmap failed");
+        exit(EXIT_FAILURE);
+    }
+
+    g_mpi_state.my_shm_slab = (uint8_t *)g_mpi_state.shm_base_ptr + (g_mpi_state.rank * g_mpi_state.slab_size);
+    g_mpi_state.shm_write_offset = 0;
+
+    printf("[Rank %d] Claimed %zu MB slab. Total Size: %zu MB at %p\n ", g_mpi_state.rank, g_mpi_state.slab_size / (1024 * 1024), g_mpi_state.shm_size / (1024 * 1024), g_mpi_state.shm_base_ptr);
 
     // Allocating the routing table safely on the heap
     g_mpi_state.peer_sockets = (int *)malloc(g_mpi_state.size * sizeof(int));
@@ -237,7 +287,7 @@ int MPI_Isend(const void *buf, int count, MPI_Datatype datatype, int dest, int t
     internal_req->next = NULL;
     internal_req->is_complete = 0;
 
-    printf("[Main] MPI_Isend called: Packaged request for rank %d (Tag %d). Pushing to Engine...\n", dest, tag);
+    // printf("[Main] MPI_Isend called: Packaged request for rank %d (Tag %d). Pushing to Engine...\n", dest, tag);
 
     enqueue_request(internal_req);
 
@@ -388,4 +438,14 @@ struct MPI_Request_int *match_active_receive(int source, int tag)
         current = current->next;
     }
     return NULL;
+}
+
+double MPI_Wtime(void)
+{
+    struct timespec tv;
+
+    clock_gettime(CLOCK_MONOTONIC, &tv);
+
+    // Converting seconds and nanosecond into a single double-precision float
+    return (double)tv.tv_sec + ((double)tv.tv_nsec / 1000000000.0);
 }

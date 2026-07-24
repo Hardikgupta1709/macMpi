@@ -90,39 +90,18 @@ void *progress_engine_loop(void *arg)
         {
             if (req->type == REQ_SEND)
             {
-                printf("[Engine] Processing SEND request for Target Rank %d...\n", req->target_rank);
-
-                // Write the data to the network
-                int dest_fd = g_mpi_state.peer_sockets[req->target_rank];
-                size_t payload_bytes = req->count * req->datatype_size;
-
-                MPI_Header header = {
-                    .magic = 0x4D504931,
-                    .source = g_mpi_state.rank,
-                    .dest = req->target_rank,
-                    .tag = req->tag,
-                    .type = MPI_INT,
-                    .count = req->count,
-                    .data_length = payload_bytes};
-
-                write_all(dest_fd, &header, sizeof(MPI_Header));
-                write_all(dest_fd, req->buffer, payload_bytes);
-
-                pthread_mutex_lock(&engine_queue.mutex);
-                req->is_complete = 1;
-                pthread_cond_broadcast(&engine_queue.completion_cond);
-                pthread_mutex_unlock(&engine_queue.mutex);
+                execute_shm_send(req);
             }
             else if (req->type == REQ_RECV)
             {
-                printf("[Engine] Processing RECV request from Source Rank %d...\n", req->target_rank);
+                // printf("[Engine] Processing RECV request from Source Rank %d...\n", req->target_rank);
 
                 // part-1 two way matching (Backward)
                 struct UMQ_Node *matched_node = extract_from_umq(req->target_rank, req->tag);
 
                 if (matched_node != NULL)
                 {
-                    printf("[Engine] Match found in UMQ.\n");
+                    // printf("[Engine] Match found in UMQ.\n");
 
                     // copying the payload from UMQ into the user waiting buffer
                     memcpy(req->buffer, matched_node->payload, matched_node->header.data_length);
@@ -139,7 +118,7 @@ void *progress_engine_loop(void *arg)
                 else
                 {
                     // payload isn't in UMQ, waiting for it to arrive on the network
-                    printf("[Engine] not in UMQ, moving to active Receives list...\n");
+                    // printf("[Engine] not in UMQ, moving to active Receives list...\n");
 
                     // unlinked from the main thread queue
                     req->next = NULL;
@@ -160,7 +139,7 @@ void *progress_engine_loop(void *arg)
         }
 
         struct kevent eventlist[32]; // processing upto 32 network events at once.
-        struct timespec timeout = {0, 10000000};
+        struct timespec timeout = {0, 0};
 
         // block until data arrives or 10ms pass
         int num_events = kevent(kq, NULL, 0, eventlist, 32, &timeout);
@@ -175,12 +154,12 @@ void *progress_engine_loop(void *arg)
 
                 if (read(active_fd, &incoming_header, sizeof(MPI_Header)) > 0)
                 {
-                    fprintf(stderr, "[Debug] Incoming Packet: Source = %d, Tag =%d\n", incoming_header.source, incoming_header.tag);
+                    // fprintf(stderr, "[Debug] Incoming Packet: Source = %d, Tag =%d\n", incoming_header.source, incoming_header.tag);
                     struct MPI_Request_int *waiting_req = match_active_receive(incoming_header.source, incoming_header.tag);
 
                     if (waiting_req != NULL)
                     {
-                        printf("[Engine] kqueue event: Matched active MPI_Irecv, routing to user.\n");
+                        // printf("[Engine] kqueue event: Matched active MPI_Irecv, routing to user.\n");
                         read_all(active_fd, waiting_req->buffer, incoming_header.data_length);
 
                         pthread_mutex_lock(&engine_queue.mutex);
@@ -190,7 +169,7 @@ void *progress_engine_loop(void *arg)
                     }
                     else
                     {
-                        printf("[Engine] kqueue event: No active receive. Routing to UMQ.\n");
+                        // printf("[Engine] kqueue event: No active receive. Routing to UMQ.\n");
                         struct UMQ_Node *new_node = malloc(sizeof(struct UMQ_Node));
                         new_node->header = incoming_header;
                         new_node->payload = malloc(incoming_header.data_length);
@@ -258,5 +237,54 @@ void enqueue_request(struct MPI_Request_int *req)
 
     pthread_cond_signal(&engine_queue.cond);
 
+    pthread_mutex_unlock(&engine_queue.mutex);
+}
+
+void execute_shm_send(struct MPI_Request_int *req)
+{
+    size_t payload_size = req->count * req->datatype_size;
+
+    // Ring buffer wrap around, so that whenever payload pushes past the 64MB slab size limit, wrap back to start
+    if (g_mpi_state.shm_write_offset + payload_size > g_mpi_state.slab_size)
+    {
+        g_mpi_state.shm_write_offset = 0;
+    }
+
+    // copying payload into shared memory (Exactly where in our slab we are writing)
+    uint8_t *dest_ptr = (uint8_t *)g_mpi_state.my_shm_slab + g_mpi_state.shm_write_offset;
+    memcpy(dest_ptr, req->buffer, payload_size);
+
+    MPI_Header header;
+    memset(&header, 0, sizeof(MPI_Header));
+    header.magic = 0xdeadbeef;
+    header.source = g_mpi_state.rank;
+    header.dest = req->target_rank;
+    header.tag = req->tag;
+    header.type = MPI_BYTE;
+    header.count = req->count;
+    header.data_length = payload_size;
+
+    header.is_shm_payload = 1;
+
+    // For absolute offset = (rank * 64MB) + current write offset
+    header.shm_offset = (g_mpi_state.rank * g_mpi_state.slab_size) + g_mpi_state.shm_write_offset;
+
+    // sending only header over the socket
+    int socket_fd = g_mpi_state.peer_sockets[req->target_rank];
+    write_all(socket_fd, &header, sizeof(MPI_Header));
+
+    // For memory alignment adding a tiny bit of padding (8 Bytes)
+    g_mpi_state.shm_write_offset += payload_size;
+
+    // 8-byte alignment for the next write
+    if (g_mpi_state.shm_write_offset % 8 != 0)
+    {
+        g_mpi_state.shm_write_offset += (8 - (g_mpi_state.shm_write_offset % 8));
+    }
+
+    // marking the request complete and waking up the main thread waiting in MPI_Wait
+    pthread_mutex_lock(&engine_queue.mutex);
+    req->is_complete = 1;
+    pthread_cond_broadcast(&engine_queue.completion_cond);
     pthread_mutex_unlock(&engine_queue.mutex);
 }
