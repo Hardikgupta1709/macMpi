@@ -151,6 +151,38 @@ int MPI_Finalize(void)
         return MPI_SUCCESS;
     }
 
+    // Synchronize before tear down, while another process might still be finishing Zero-Copy read
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Unmapping the physical RAM from our virtual address space
+    if (g_mpi_state.shm_base_ptr != NULL && g_mpi_state.shm_base_ptr != MAP_FAILED)
+    {
+        if (munmap(g_mpi_state.shm_base_ptr, g_mpi_state.shm_size) == -1)
+        {
+            perror("munmap failed during finalze");
+        }
+    }
+
+    // Closing of shared memory file descriptor
+    if (g_mpi_state.shm_fd != -1)
+    {
+        close(g_mpi_state.shm_fd);
+    }
+
+    // Rank 0 -> requesting OS to delete the RAM block
+    if (g_mpi_state.rank == 0)
+    {
+        const char *shm_name = "/macmpi_data_plane";
+        if (shm_unlink(shm_name) == -1)
+        {
+            perror("[Rank 0] shm_unlink failed");
+        }
+        else
+        {
+            printf("[Rank 0] Successfully wiped Shared Memory from OS.\n");
+        }
+    }
+
     for (int i = 0; i < g_mpi_state.size; i++)
     {
         if (g_mpi_state.peer_sockets[i] != -1)
