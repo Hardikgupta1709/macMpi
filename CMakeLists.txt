@@ -55,6 +55,8 @@ target_link_libraries(test_allreduce PRIVATE mpi)
 add_executable(test_alltoall tests/test_alltoall.c)
 target_link_libraries(test_alltoall PRIVATE mpi)
 
+add_executable(benchmark_wtime tests/benchmark_wtime.c)
+target_link_libraries(benchmark_wtime PRIVATE mpi)
 
 # telling macOS exactly where to put the binary files a user runs 'sudo make install'
 install(TARGETS mpi mpirun
