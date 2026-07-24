@@ -222,7 +222,7 @@ int main(int argc, char *argv[])
         for (int i = 0; i < num_procs; i++)
         {
             // if events show that data is ready to read
-            if (pollfds[i].revents & POLLIN)
+            if (pollfds[i].revents & POLLIN | POLLHUP)
             {
                 ssize_t bytes = read(pollfds[i].fd, buffer, sizeof(buffer) - 1);
                 if (bytes > 0)
