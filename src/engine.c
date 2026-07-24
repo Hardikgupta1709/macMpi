@@ -38,6 +38,22 @@ static struct MPI_Request_int *dequeue_request()
     return req;
 }
 
+static void fetch_payload(int active_fd, MPI_Header *hdr, void *dest_buffer)
+{
+    if (hdr->is_shm_payload)
+    {
+        // ZERO COPY PATH ->data is already is waiting in shared RAM
+        uint8_t *src_ptr = (uint8_t *)g_mpi_state.shm_base_ptr + hdr->shm_offset;
+
+        memcpy(dest_buffer, src_ptr, hdr->data_length);
+    }
+    else
+    {
+        // data sent over with socket model
+        read_all(active_fd, dest_buffer, hdr->data_length);
+    }
+}
+
 void *progress_engine_loop(void *arg)
 {
     // Hardware optimisation: Pin this thread to Apple's Performance cores
@@ -159,8 +175,8 @@ void *progress_engine_loop(void *arg)
 
                     if (waiting_req != NULL)
                     {
-                        // printf("[Engine] kqueue event: Matched active MPI_Irecv, routing to user.\n");
-                        read_all(active_fd, waiting_req->buffer, incoming_header.data_length);
+                        // Pulling the payload directly from RAM into user's waiting buffer
+                        fetch_payload(active_fd, &incoming_header, waiting_req->buffer);
 
                         pthread_mutex_lock(&engine_queue.mutex);
                         waiting_req->is_complete = 1;
@@ -173,7 +189,10 @@ void *progress_engine_loop(void *arg)
                         struct UMQ_Node *new_node = malloc(sizeof(struct UMQ_Node));
                         new_node->header = incoming_header;
                         new_node->payload = malloc(incoming_header.data_length);
-                        read_all(active_fd, new_node->payload, incoming_header.data_length);
+
+                        // Pulled the payload directly from RAM into UMQ holding buffer
+                        fetch_payload(active_fd, &incoming_header, new_node->payload);
+
                         new_node->next = NULL;
 
                         if (g_mpi_state.umq_head == NULL)
