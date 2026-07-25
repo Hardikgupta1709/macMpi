@@ -75,4 +75,6 @@ int MPI_Alltoall(const void *sendbuf, int sendcount, MPI_Datatype sendtype, void
 
 double MPI_Wtime(void);
 
+double MPI_Wtime(void);
+
 #endif

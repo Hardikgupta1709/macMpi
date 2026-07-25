@@ -10,8 +10,9 @@
 #include <stddef.h>
 #include <sched.h>
 #include <time.h>
+#include <sys/stat.h>
 
-MPI_GlobalState g_mpi_state = {-1, -1, NULL, 0, NULL};
+MPI_GlobalState g_mpi_state = {-1, -1, NULL, 0, -1};
 
 int MPI_Init(int *argc, char ***argv)
 {
@@ -46,7 +47,7 @@ int MPI_Init(int *argc, char ***argv)
         g_mpi_state.shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, 0666);
         if (g_mpi_state.shm_fd == -1)
         {
-            perror('[Rank 0] shm_open failed');
+            perror("[Rank 0] shm_open failed");
             exit(EXIT_FAILURE);
         }
 
@@ -56,8 +57,26 @@ int MPI_Init(int *argc, char ***argv)
             exit(EXIT_FAILURE);
         }
     }
+    else
+    {
+        while (1)
+        {
+            g_mpi_state.shm_fd = shm_open(shm_name, O_RDWR, 0666);
+            if (g_mpi_state.shm_fd != -1)
+            {
+                struct stat st;
+                fstat(g_mpi_state.shm_fd, &st);
+                if (st.st_size == g_mpi_state.shm_size)
+                {
+                    break;
+                }
+                close(g_mpi_state.shm_fd);
+            }
+            usleep(1000); // Sleep 1ms to prevent CPU thrashing
+        }
+    }
 
-    MPI_Barrier(MPI_COMM_WORLD); // synchronisation because rank 1..N cannot map the memory until Rank 0 has finished truncating it!
+    g_mpi_state.shm_base_ptr = mmap(NULL, g_mpi_state.shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, g_mpi_state.shm_fd, 0);
 
     // Ranks 1..N open the already-created memory segment
     if (g_mpi_state.rank != 0)
@@ -149,6 +168,38 @@ int MPI_Finalize(void)
     if (!g_mpi_state.initialized)
     {
         return MPI_SUCCESS;
+    }
+
+    // Synchronize before tear down, while another process might still be finishing Zero-Copy read
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Unmapping the physical RAM from our virtual address space
+    if (g_mpi_state.shm_base_ptr != NULL && g_mpi_state.shm_base_ptr != MAP_FAILED)
+    {
+        if (munmap(g_mpi_state.shm_base_ptr, g_mpi_state.shm_size) == -1)
+        {
+            perror("munmap failed during finalze");
+        }
+    }
+
+    // Closing of shared memory file descriptor
+    if (g_mpi_state.shm_fd != -1)
+    {
+        close(g_mpi_state.shm_fd);
+    }
+
+    // Rank 0 -> requesting OS to delete the RAM block
+    if (g_mpi_state.rank == 0)
+    {
+        const char *shm_name = "/macmpi_data_plane";
+        if (shm_unlink(shm_name) == -1)
+        {
+            perror("[Rank 0] shm_unlink failed");
+        }
+        else
+        {
+            printf("[Rank 0] Successfully wiped Shared Memory from OS.\n");
+        }
     }
 
     for (int i = 0; i < g_mpi_state.size; i++)
