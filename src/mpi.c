@@ -10,8 +10,9 @@
 #include <stddef.h>
 #include <sched.h>
 #include <time.h>
+#include <sys/stat.h>
 
-MPI_GlobalState g_mpi_state = {-1, -1, NULL, 0, NULL};
+MPI_GlobalState g_mpi_state = {-1, -1, NULL, 0, -1};
 
 int MPI_Init(int *argc, char ***argv)
 {
@@ -46,7 +47,7 @@ int MPI_Init(int *argc, char ***argv)
         g_mpi_state.shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, 0666);
         if (g_mpi_state.shm_fd == -1)
         {
-            perror('[Rank 0] shm_open failed');
+            perror("[Rank 0] shm_open failed");
             exit(EXIT_FAILURE);
         }
 
@@ -56,8 +57,26 @@ int MPI_Init(int *argc, char ***argv)
             exit(EXIT_FAILURE);
         }
     }
+    else
+    {
+        while (1)
+        {
+            g_mpi_state.shm_fd = shm_open(shm_name, O_RDWR, 0666);
+            if (g_mpi_state.shm_fd != -1)
+            {
+                struct stat st;
+                fstat(g_mpi_state.shm_fd, &st);
+                if (st.st_size == g_mpi_state.shm_size)
+                {
+                    break;
+                }
+                close(g_mpi_state.shm_fd);
+            }
+            usleep(1000); // Sleep 1ms to prevent CPU thrashing
+        }
+    }
 
-    MPI_Barrier(MPI_COMM_WORLD); // synchronisation because rank 1..N cannot map the memory until Rank 0 has finished truncating it!
+    g_mpi_state.shm_base_ptr = mmap(NULL, g_mpi_state.shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, g_mpi_state.shm_fd, 0);
 
     // Ranks 1..N open the already-created memory segment
     if (g_mpi_state.rank != 0)

@@ -7,6 +7,7 @@
 
 // macOS specific header
 #include <sys/qos.h>
+void execute_shm_send(struct MPI_Request_int *req);
 
 RequestQueue engine_queue = {NULL, NULL, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
 

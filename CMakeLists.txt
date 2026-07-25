@@ -58,6 +58,9 @@ target_link_libraries(test_alltoall PRIVATE mpi)
 add_executable(benchmark_wtime tests/benchmark_wtime.c)
 target_link_libraries(benchmark_wtime PRIVATE mpi)
 
+add_executable(benchmark_shm tests/benchmark_shm.c)
+target_link_libraries(benchmark_shm PRIVATE mpi)
+
 # telling macOS exactly where to put the binary files a user runs 'sudo make install'
 install(TARGETS mpi mpirun
     LIBRARY DESTINATION lib     # libmpi.dylib goes to /user/local/lib
