@@ -90,14 +90,119 @@ macMPI builds collective operations on top of its point-to-point layer:
 - CMake 3.20 or newer
 - Ninja
 
-### Build Instructions
+Install the build tools with Homebrew if needed:
 
 ```bash
-# Clone the repository
-git clone https://github.com/hardikgupta1709/macMPI.git
-cd macMPI
-
-# Configure and build
-cmake -S . -B build -G Ninja
-cmake --build build
+xcode-select --install
+brew install cmake ninja
 ```
+
+Clone and build a release configuration:
+
+```bash
+git clone https://github.com/Hardikgupta1709/macMpi.git
+cd macMpi
+
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+```
+
+Launch four ranks:
+
+```bash
+./build/mpirun -n 4 "$PWD/build/hello_env"
+```
+
+Exercise the asynchronous progress engine:
+
+```bash
+./build/mpirun -n 2 "$PWD/build/test_engine"
+```
+
+Run the bundled shared-memory benchmark:
+
+```bash
+./build/mpirun -n 2 "$PWD/build/benchmark_shm"
+```
+
+## Benchmarks
+
+Benchmarks are measurements of a particular workload and machine, not universal performance guarantees. Results will vary with the Apple SoC, macOS version, compiler, optimization flags, rank count, thermals, and background activity.
+
+### Shared-memory point-to-point throughput
+
+The bundled `benchmark_shm` test exchanges a 19.07 MiB payload between two ranks for 1,000 round trips. The recorded run below reported **102.99 GB/s** of aggregate point-to-point bandwidth.
+
+![macMPI shared-memory benchmark terminal output](assets/macmpi-shared-memory-benchmark.png)
+
+### Distributed matrix multiplication
+
+This macro-benchmark combines approximately **17.1 billion floating-point operations** with **96 MB of inter-rank data transfer**.
+
+![OpenMPI and macMPI distributed matrix multiplication benchmark](assets/github_heavy_benchmark.png)
+
+| Runtime | Total execution time |
+| ------- | -------------------: |
+| OpenMPI |              17.25 s |
+| macMPI  |              17.21 s |
+
+The two runtimes finish within approximately **0.3%** of one another in this run. The result demonstrates performance parity for this measured workload; it should not be interpreted as a general claim that either runtime is faster across all MPI programs.
+
+For a reproducible comparison, record the Mac model and SoC, macOS version, compiler version and flags, matrix dimensions, rank count, warm-up policy, number of repetitions, and the OpenMPI version alongside future results.
+
+## Repository layout
+
+```text
+.
+├── include/
+│   └── mpi.h              Public MPI interface
+├── src/
+│   ├── mpi.c              Runtime and point-to-point API
+│   ├── engine.c           Progress thread and message matching
+│   ├── collectives.c      Collective algorithms
+│   ├── mpi_internal.h     Internal state and transport structures
+│   └── mpirun.c           Local process launcher
+├── tests/                 Functional tests and benchmarks
+├── assets/                README benchmark images
+└── CMakeLists.txt
+```
+
+## Project status
+
+macMPI is under active development and is best suited to systems experimentation, MPI education, and local Apple Silicon workloads.
+
+### Implemented
+
+- [x] Local rank creation and lifecycle management
+- [x] Unix-domain socket control mesh
+- [x] POSIX shared-memory payload transport
+- [x] Background progress engine
+- [x] Blocking and non-blocking point-to-point operations
+- [x] Core collective operations
+- [x] Shared-memory throughput benchmark
+
+### Planned
+
+- [ ] Derived datatypes such as `MPI_Type_vector`
+- [ ] Dynamic communicators such as `MPI_Comm_split`
+- [ ] Broader MPI error handling and validation
+- [ ] Stress, sanitiser, and concurrency test coverage
+- [ ] Reproducible benchmark automation and metadata
+- [ ] Continuous integration on Apple Silicon runners
+
+## Contributing
+
+Issues and pull requests are welcome. For bug reports, include:
+
+- Mac model and Apple SoC;
+- macOS version;
+- Apple Clang and CMake versions;
+- the number of ranks;
+- the smallest program that reproduces the problem;
+- the complete launcher output.
+
+Please keep performance claims reproducible and include both the raw measurements and the commands used to generate them.
+
+## License
+
+This repository does not currently declare an open-source license. Until a license is added, the source is available for inspection but no permission to copy, modify, or redistribute it is granted.
