@@ -1,81 +1,93 @@
-# macMPI: High-Performance MPI-1.1 Implementation for Apple Silicon
+# macMPI
 
-[![Language](https://img.shields.io/badge/Language-C11-blue.svg)](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%28M--Series%29-black.svg)](https://developer.apple.com/apple-silicon/)
-[![Build](https://img.shields.io/badge/Build-CMake%20%2B%20Ninja-success.svg)](https://ninja-build.org/)
+> **Move bytes. Not overhead.**
 
-**macMPI** is a low-latency, single-node implementation of the MPI-1.1 standard built entirely from scratch in C11. Engineered specifically for the XNU/Darwin kernel and optimized for Apple Silicon (M-Series) Unified Memory, the library bypasses standard OS network stacks to deliver high-throughput communication.
+**macMPI** is an experimental, single-node MPI runtime built from scratch in C11 for macOS and Apple Silicon. It separates control traffic from payload movement: Unix-domain sockets carry compact message metadata, while POSIX shared memory carries the data between ranks.
 
-By combining a native macOS `kqueue` control plane with a POSIX shared-memory (`mmap`) data plane, macMPI reaches **102.99 GB/s of point-to-point bandwidth** in the benchmark shown below.
+[![Language: C11](https://img.shields.io/badge/language-C11-111111.svg)](https://en.wikipedia.org/wiki/C11_%28C_standard_revision%29)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-111111.svg?logo=apple&logoColor=white)](https://developer.apple.com/macos/)
+[![Architecture: Apple Silicon](https://img.shields.io/badge/architecture-Apple%20Silicon-111111.svg)](https://developer.apple.com/apple-silicon/)
+[![Build: CMake + Ninja](https://img.shields.io/badge/build-CMake%20%2B%20Ninja-111111.svg)](https://cmake.org/)
+[![Status: Experimental](https://img.shields.io/badge/status-experimental-ff3b30.svg)](#project-status)
 
----
+[Documentation](https://hardikgupta1709.github.io/macMpi/) · [Build and run](#build-and-run) · [Architecture](#architecture) · [Benchmarks](#benchmarks) · [API coverage](#api-coverage)
 
-## Architectural Subsystems
+## Why macMPI?
 
-### 1. Hybrid Transport Layer
+Most MPI implementations are designed for portability across operating systems and networks. macMPI deliberately narrows the problem: fast communication between processes on one Apple Silicon machine.
 
-Standard socket-based IPC can be limited by kernel buffering and context switching. macMPI addresses this with a split architecture:
+- **Darwin-native eventing** — a background progress thread uses `kqueue` to discover incoming control messages.
+- **Shared-memory payloads** — every rank owns a 64 MiB slab in a POSIX shared-memory arena.
+- **Small control messages** — a full mesh of Unix-domain sockets carries aligned 64-byte headers rather than application payloads.
+- **Asynchronous point-to-point operations** — `MPI_Isend`, `MPI_Irecv`, `MPI_Test`, and `MPI_Wait` are backed by a request queue and progress engine.
+- **Topology-aware collectives** — barriers, broadcasts, reductions, gathers, scatters, and all-to-all operations use decentralized communication patterns.
+- **Inspectable implementation** — the runtime, launcher, progress engine, and collectives are implemented in a compact C11 codebase.
 
-- **Data plane (`mmap` / `shm_open`):** Ranks allocate and partition a shared-memory arena into isolated, lock-free 64 MB slab ring buffers. Payload transmission is reduced to a direct `memcpy()` operating at memory speed.
-- **Control plane (Unix domain sockets):** Sockets carry only fixed-overhead, 64-byte signaling headers. They act as asynchronous doorbells that notify receivers of memory offsets, reducing head-of-line blocking and kernel congestion.
+> [!IMPORTANT]
+> macMPI is a focused MPI-1.1 subset for experimentation and single-machine workloads. It is not currently a complete, ABI-compatible replacement for OpenMPI or MPICH, and it does not provide multi-node network transport.
 
-### 2. Non-Blocking Progress Engine
+## Architecture
 
-User execution is decoupled from the transport layer through a dedicated background subsystem to support compute-communication overlap.
+```mermaid
+flowchart LR
+    APP["Rank application"] --> API["MPI API"]
+    API --> QUEUE["Request queue"]
+    QUEUE --> ENGINE["Background progress thread"]
+    ENGINE --> CONTROL["64-byte control headers<br/>Unix-domain sockets"]
+    ENGINE --> DATA["Payload slabs<br/>POSIX shared memory"]
+    CONTROL --> PEER["Peer rank"]
+    DATA --> PEER
+```
 
-- **Performance-core affinity:** A dedicated POSIX shadow thread (`pthread`) uses Apple-specific QoS APIs such as `pthread_set_qos_class_self_np`.
-- **O(1) event dispatching:** Native macOS event queues (`kqueue` / `kevent`) monitor peer sockets without CPU polling.
-- **Two-way matching and UMQ:** Fully asynchronous `MPI_Isend` and `MPI_Irecv` operations are supported. Out-of-order messages are moved to an Unexpected Message Queue (UMQ) until a matching receive is posted.
+### Process runtime
 
-### 3. Decentralized Process Management (`mpirun`)
+`mpirun` creates a full mesh of Unix socket pairs, launches ranks with `fork()` and `exec()`, and injects the rank, world size, and inherited socket descriptors through environment variables. Rank output is collected through pipes and multiplexed by the launcher.
 
-A standalone daemon manages process lifecycles, virtual topology construction, and terminal I/O streaming.
+### Hybrid transport
 
-- **Environment injection:** Process separation is implemented through `fork()` / `execvp()` boundaries, with topological metadata injected into the target address spaces.
-- **Non-blocking stream multiplexing:** Child `stdout` and `stderr` streams are isolated with POSIX pipes and multiplexed through an event-driven `poll()` loop.
+Each process maps the same POSIX shared-memory object and receives a private 64 MiB slab. Sending a payload copies it into the sender's slab, then sends a compact header containing its location to the destination rank. The receiver copies the payload from shared memory into the posted receive buffer.
 
-### 4. Advanced Collective Operations
+This design keeps large payloads out of the socket path while preserving MPI-style buffer semantics.
 
-Collective operations use decentralized communication structures to avoid bottlenecking the root rank:
+### Progress and matching
 
-- **Dissemination barrier (`MPI_Barrier`):** `O(log₂ N)` synchronization driven by bitwise index shifts.
-- **Binomial-tree broadcast (`MPI_Bcast`):** Algorithmic data replication for more uniform bandwidth allocation.
-- **Asynchronous slice allocation (`MPI_Scatter` / `MPI_Gather`):** Pointer arithmetic and non-blocking operations distribute matrix slices and collect ordered arrays across generic memory layouts.
-- **Compound operations (`MPI_Allgather` / `MPI_Alltoall`):** Parallel non-blocking operations support data replication and distributed matrix transpositions.
-- **Inverse-tree reductions (`MPI_Reduce` / `MPI_Allreduce`):** Arithmetic operations such as `MPI_SUM` and `MPI_MAX` are evaluated iteratively up the tree before results are propagated from the root.
+Non-blocking requests enter a thread-safe queue consumed by a dedicated progress thread. The engine uses `kqueue` for peer-socket events and supports:
 
----
+- posted send and receive requests;
+- source and tag matching, including `MPI_ANY_SOURCE` and `MPI_ANY_TAG`;
+- an Unexpected Message Queue for messages that arrive before their matching receive;
+- completion through `MPI_Test` and `MPI_Wait`.
 
-## Performance & Benchmarks
+### Collectives
 
-The following terminal output shows a 19.07 MB shared-memory payload benchmark executed over 1,000 iterations:
+macMPI builds collective operations on top of its point-to-point layer:
 
-![macMPI shared-memory benchmark terminal output](assets/macmpi-shared-memory-benchmark.png)
+- dissemination and tree barriers;
+- binomial-tree broadcast;
+- tree-based reduction and all-reduction;
+- scatter, gather, and all-gather;
+- all-to-all exchange.
 
----
+## API coverage
 
-## Project Status & Roadmap
+| Area                        | Implemented                                                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Runtime                     | `MPI_Init`, `MPI_Finalize`, `MPI_Comm_rank`, `MPI_Comm_size`, `MPI_Wtime`                                               |
+| Blocking point-to-point     | `MPI_Send`, `MPI_Recv`                                                                                                  |
+| Non-blocking point-to-point | `MPI_Isend`, `MPI_Irecv`, `MPI_Test`, `MPI_Wait`                                                                        |
+| Collectives                 | `MPI_Barrier`, `MPI_Bcast`, `MPI_Reduce`, `MPI_Allreduce`, `MPI_Scatter`, `MPI_Gather`, `MPI_Allgather`, `MPI_Alltoall` |
+| Datatypes                   | `MPI_INT`, `MPI_FLOAT`, `MPI_DOUBLE`, `MPI_CHAR`, `MPI_BYTE`                                                            |
+| Reduction operations        | `MPI_SUM`, `MPI_MAX`, `MPI_MIN`, `MPI_PROD`                                                                             |
+| Matching                    | Exact source/tag matching, `MPI_ANY_SOURCE`, `MPI_ANY_TAG`                                                              |
 
-- [x] Phase 1: Process Management & Lifecycle Daemon
-- [x] Phase 2: Point-to-Point Messaging Fabric
-- [x] Phase 3: Multi-threaded Progress Engine (`kqueue`)
-- [x] Phase 4: Foundational Collective Primitives
-- [x] Phase 5: POSIX Shared Memory (`mmap`) Migration
-- [x] Phase 6: HPC Shared-Memory Benchmarking
+## Build and run
 
-### Ongoing / Future Work
+### Requirements
 
-- **Derived Datatypes Engine:** Implement `MPI_Type_commit` and `MPI_Type_vector` to serialize and unpack non-contiguous memory structures such as 2D matrix columns and complex C structs.
-- **Dynamic Topology Partitioning (`MPI_Comm_split`):** Create isolated communicators at runtime to divide the compute environment into specialized task groups.
-
----
-
-## Compilation & Execution
-
-### Prerequisites
-
-- Apple Clang, available through the Xcode Command Line Tools
-- CMake 3.10 or newer
+- Apple Silicon Mac
+- macOS
+- Apple Clang from the Xcode Command Line Tools
+- CMake 3.20 or newer
 - Ninja
 
 ### Build Instructions
@@ -88,12 +100,4 @@ cd macMPI
 # Configure and build
 cmake -S . -B build -G Ninja
 cmake --build build
-```
-
-### Run the Benchmark
-
-From the repository root:
-
-```bash
-./build/mpirun -n 8 "$(pwd)/tests/benchmark_shm"
 ```
