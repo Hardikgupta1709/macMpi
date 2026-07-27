@@ -1,0 +1,2102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f4f1">
+    <meta name="description" content="Documentation for macMPI, a low-latency MPI-1.1 implementation for macOS unified memory.">
+    <title>macMPI Documentation</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=IBM+Plex+Mono:wght@400;500;600&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+      :root {
+        --paper: #f4f4f1;
+        --surface: #ffffff;
+        --ink: #090909;
+        --muted: #5f5f5b;
+        --quiet: #888883;
+        --line: #c9c9c3;
+        --soft-line: #dfdfda;
+        --red: #ff3b30;
+        --red-dark: #d72b22;
+        --code: #121212;
+        --code-muted: #92928e;
+        --display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+        --body: "Inter Tight", "Helvetica Neue", Arial, sans-serif;
+        --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+        --header-height: 68px;
+        --sidebar-width: 242px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: calc(var(--header-height) + 28px);
+      }
+
+      body {
+        min-width: 320px;
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--body);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      body.search-open,
+      body.menu-open {
+        overflow: hidden;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      button,
+      input {
+        color: inherit;
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      ::selection {
+        background: var(--red);
+        color: #fff;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--red);
+        outline-offset: 3px;
+      }
+
+      .skip-link {
+        position: fixed;
+        z-index: 1000;
+        left: 14px;
+        top: -80px;
+        padding: 10px 14px;
+        background: var(--ink);
+        color: white;
+        font-family: var(--mono);
+        font-size: 11px;
+        transition: top 120ms ease;
+      }
+
+      .skip-link:focus {
+        top: 12px;
+      }
+
+      .topbar {
+        position: fixed;
+        z-index: 60;
+        inset: 0 0 auto;
+        height: var(--header-height);
+        display: grid;
+        grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
+        align-items: center;
+        border-bottom: 1px solid var(--ink);
+        background: rgba(244, 244, 241, 0.96);
+        backdrop-filter: blur(12px);
+      }
+
+      .brand {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 0 25px;
+        border-right: 1px solid var(--ink);
+        font-family: var(--display);
+        font-size: 17px;
+        font-weight: 800;
+        letter-spacing: -0.045em;
+      }
+
+      .brand-mark {
+        position: relative;
+        width: 31px;
+        height: 31px;
+        flex: 0 0 auto;
+        overflow: hidden;
+        border-radius: 7px;
+        background: var(--ink);
+      }
+
+      .brand-mark i {
+        position: absolute;
+        width: 5px;
+        border-radius: 10px;
+        background: #fff;
+        transform: rotate(-28deg);
+      }
+
+      .brand-mark i:nth-child(1) {
+        height: 12px;
+        left: 8px;
+        top: 11px;
+      }
+
+      .brand-mark i:nth-child(2) {
+        height: 20px;
+        left: 14px;
+        top: 6px;
+      }
+
+      .brand-mark i:nth-child(3) {
+        height: 13px;
+        left: 20px;
+        top: 10px;
+      }
+
+      .brand small {
+        margin-left: 2px;
+        padding: 3px 5px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 7px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+      }
+
+      .topnav {
+        display: flex;
+        align-items: center;
+        gap: 27px;
+        padding: 0 28px;
+      }
+
+      .topnav a {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 9px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .topnav a:hover {
+        color: var(--ink);
+      }
+
+      .top-actions {
+        height: 100%;
+        display: flex;
+        align-items: center;
+      }
+
+      .search-trigger {
+        width: 226px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-right: 18px;
+        padding: 0 8px 0 11px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 9px;
+      }
+
+      .search-trigger > span:first-child {
+        color: var(--red);
+        font-size: 17px;
+      }
+
+      .search-trigger > span:nth-child(2) {
+        flex: 1;
+        text-align: left;
+      }
+
+      kbd {
+        padding: 3px 5px;
+        border: 1px solid var(--line);
+        background: var(--paper);
+        color: var(--quiet);
+        font-family: var(--mono);
+        font-size: 7px;
+      }
+
+      .github {
+        height: 100%;
+        display: grid;
+        place-items: center;
+        padding: 0 25px;
+        border-left: 1px solid var(--ink);
+        font-family: var(--mono);
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .github span {
+        color: var(--red);
+      }
+
+      .menu-button {
+        width: 62px;
+        height: 100%;
+        display: none;
+        place-items: center;
+        border: 0;
+        border-left: 1px solid var(--ink);
+        background: transparent;
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .page-shell {
+        display: grid;
+        grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+        padding-top: var(--header-height);
+      }
+
+      .sidebar {
+        position: fixed;
+        z-index: 40;
+        left: 0;
+        top: var(--header-height);
+        bottom: 0;
+        width: var(--sidebar-width);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        padding: 28px 22px 21px 25px;
+        border-right: 1px solid var(--ink);
+        background: var(--paper);
+      }
+
+      .nav-group {
+        margin-bottom: 25px;
+      }
+
+      .nav-label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--quiet);
+        font-family: var(--mono);
+        font-size: 7px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .sidebar a {
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-left: -11px;
+        padding: 6px 8px 6px 11px;
+        border-left: 2px solid transparent;
+        color: var(--muted);
+        font-size: 11px;
+        transition: 120ms ease;
+      }
+
+      .sidebar a::before {
+        width: 4px;
+        height: 4px;
+        flex: 0 0 auto;
+        background: var(--line);
+        content: "";
+      }
+
+      .sidebar a:hover {
+        color: var(--ink);
+      }
+
+      .sidebar a.active {
+        border-left-color: var(--red);
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      .sidebar a.active::before {
+        background: var(--red);
+      }
+
+      .sidebar-footer {
+        display: grid;
+        gap: 8px;
+        margin-top: auto;
+        padding-top: 17px;
+        border-top: 1px solid var(--line);
+        color: var(--quiet);
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .sidebar-footer a {
+        min-height: auto;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        color: var(--ink);
+        font-size: 8px;
+      }
+
+      .sidebar-footer a::before {
+        display: none;
+      }
+
+      .main {
+        grid-column: 2;
+        min-width: 0;
+      }
+
+      .content {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 clamp(30px, 6vw, 94px) 90px;
+      }
+
+      .hero {
+        position: relative;
+        min-height: calc(100vh - var(--header-height));
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 82px 0 48px;
+        container-type: inline-size;
+      }
+
+      .hero::after {
+        position: absolute;
+        right: 0;
+        top: 80px;
+        width: 12px;
+        height: 12px;
+        background: var(--red);
+        content: "";
+      }
+
+      .hero h1 {
+        max-width: 100%;
+        margin: 0;
+        font-family: var(--display);
+        font-size: clamp(48px, 11.2cqw, 116px);
+        font-stretch: 90%;
+        font-weight: 860;
+        letter-spacing: -0.085em;
+        line-height: 0.78;
+        text-transform: uppercase;
+      }
+
+      .hero h1 span {
+        display: block;
+        white-space: nowrap;
+      }
+
+      .hero h1 .outline {
+        margin-top: 0.08em;
+        -webkit-text-stroke: clamp(1px, 0.13vw, 2px) var(--ink);
+        color: transparent;
+      }
+
+      .hero-bottom {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: end;
+        gap: 52px;
+        margin-top: 47px;
+      }
+
+      .hero-copy {
+        max-width: 650px;
+        margin: 0;
+        color: var(--muted);
+        font-size: clamp(15px, 1.45vw, 18px);
+        line-height: 1.65;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .button {
+        min-height: 45px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        padding: 0 17px;
+        border: 1px solid var(--ink);
+        background: transparent;
+        font-family: var(--mono);
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        transition: 120ms ease;
+      }
+
+      .button-primary {
+        background: var(--ink);
+        color: #fff;
+      }
+
+      .button-primary span {
+        color: var(--red);
+      }
+
+      .button:hover {
+        background: var(--red);
+        border-color: var(--red);
+        color: white;
+      }
+
+      .button:hover span {
+        color: white;
+      }
+
+      .measurement {
+        display: grid;
+        grid-template-columns: 0.8fr 1.2fr;
+        margin-top: 58px;
+        border: 1px solid var(--ink);
+        background: var(--ink);
+        color: white;
+      }
+
+      .measurement-value {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: end;
+        gap: 12px;
+        padding: 24px 27px;
+        border-right: 1px solid #50504d;
+      }
+
+      .measurement-value strong {
+        font-family: var(--display);
+        font-size: clamp(47px, 5.8vw, 78px);
+        font-weight: 780;
+        letter-spacing: -0.07em;
+        line-height: 0.8;
+      }
+
+      .measurement-value > span {
+        display: grid;
+        gap: 4px;
+        padding-bottom: 2px;
+        color: #c7c7c1;
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .measurement-value em {
+        color: var(--red);
+        font-size: 9px;
+        font-style: normal;
+      }
+
+      .measurement-chart {
+        display: grid;
+        grid-template-columns: repeat(16, 1fr);
+        align-items: end;
+        gap: 5px;
+        min-height: 110px;
+        padding: 20px 23px 17px;
+      }
+
+      .measurement-chart i {
+        min-height: 4px;
+        background: #555552;
+      }
+
+      .measurement-chart i:nth-child(n + 10) {
+        background: #b7b7b1;
+      }
+
+      .measurement-chart i:last-child {
+        background: var(--red);
+      }
+
+      .docs-section {
+        padding: 96px 0 14px;
+        border-top: 1px solid var(--ink);
+      }
+
+      .section-header {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 40px;
+        margin-bottom: 46px;
+      }
+
+      .section-label {
+        padding-top: 9px;
+        color: var(--red-dark);
+        font-family: var(--mono);
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .section-header h2 {
+        max-width: 790px;
+        margin: 0;
+        font-family: var(--display);
+        font-size: clamp(40px, 5vw, 68px);
+        font-stretch: 105%;
+        font-weight: 770;
+        letter-spacing: -0.065em;
+        line-height: 0.95;
+        text-transform: uppercase;
+      }
+
+      .section-intro {
+        max-width: 680px;
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .subsection {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 40px;
+        padding: 41px 0;
+        border-top: 1px solid var(--soft-line);
+      }
+
+      .subsection-title {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 13px;
+        font-weight: 720;
+        letter-spacing: -0.02em;
+        text-transform: uppercase;
+      }
+
+      .subsection-body {
+        min-width: 0;
+      }
+
+      .subsection-body > p:first-child {
+        margin-top: 0;
+      }
+
+      .subsection-body p {
+        max-width: 720px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.75;
+      }
+
+      code {
+        font-family: var(--mono);
+      }
+
+      p code {
+        padding: 2px 4px;
+        border: 1px solid var(--line);
+        background: #ecece8;
+        color: #343432;
+        font-size: 0.85em;
+      }
+
+      .requirements {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        margin-top: 24px;
+        border: 1px solid var(--ink);
+      }
+
+      .requirements div {
+        min-height: 112px;
+        display: grid;
+        align-content: space-between;
+        gap: 15px;
+        padding: 17px;
+        border-right: 1px solid var(--ink);
+        background: var(--surface);
+      }
+
+      .requirements div:last-child {
+        border-right: 0;
+      }
+
+      .requirements strong {
+        font-family: var(--display);
+        font-size: 12px;
+        font-weight: 730;
+        text-transform: uppercase;
+      }
+
+      .requirements span {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 8px;
+        line-height: 1.45;
+      }
+
+      .code-block {
+        margin: 24px 0;
+        overflow: hidden;
+        border: 1px solid var(--ink);
+        background: var(--code);
+        color: #f5f5f2;
+      }
+
+      .code-bar {
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 13px 0 16px;
+        border-bottom: 1px solid #3a3a38;
+        color: #a5a5a0;
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .copy-button {
+        padding: 5px 7px;
+        border: 1px solid #53534f;
+        background: transparent;
+        color: #b9b9b4;
+        font-family: var(--mono);
+        font-size: 7px;
+        text-transform: uppercase;
+      }
+
+      .copy-button:hover {
+        border-color: var(--red);
+        color: white;
+      }
+
+      .code-block pre {
+        margin: 0;
+        padding: 22px;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 10px;
+        line-height: 1.75;
+        tab-size: 2;
+      }
+
+      .code-block .comment {
+        color: #858581;
+      }
+
+      .code-block .accent {
+        color: #ff7a72;
+      }
+
+      .note {
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        gap: 14px;
+        margin: 22px 0;
+        padding: 16px;
+        border: 1px solid var(--ink);
+        background: var(--surface);
+      }
+
+      .note > span {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        background: var(--red);
+        color: white;
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .note strong {
+        display: block;
+        margin: 1px 0 5px;
+        font-family: var(--display);
+        font-size: 11px;
+        font-weight: 730;
+        text-transform: uppercase;
+      }
+
+      .note p {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.6;
+      }
+
+      .system-diagram {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
+        margin: 29px 0;
+        padding-bottom: 88px;
+        border-top: 1px solid var(--ink);
+        border-left: 1px solid var(--ink);
+      }
+
+      .rank-node {
+        position: relative;
+        z-index: 2;
+        min-height: 92px;
+        display: grid;
+        place-items: center;
+        align-content: center;
+        gap: 6px;
+        border-right: 1px solid var(--ink);
+        border-bottom: 1px solid var(--ink);
+        background: var(--surface);
+      }
+
+      .rank-node strong {
+        font-family: var(--display);
+        font-size: 17px;
+        font-weight: 790;
+      }
+
+      .rank-node small {
+        color: var(--quiet);
+        font-family: var(--mono);
+        font-size: 7px;
+      }
+
+      .rank-node::after {
+        position: absolute;
+        width: 1px;
+        height: 32px;
+        left: 50%;
+        bottom: -33px;
+        background: var(--ink);
+        content: "";
+      }
+
+      .memory-bar {
+        position: absolute;
+        z-index: 1;
+        left: 8%;
+        right: 8%;
+        bottom: 0;
+        min-height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 0 18px;
+        background: var(--ink);
+        color: white;
+      }
+
+      .memory-bar strong {
+        font-family: var(--display);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .memory-bar code {
+        color: #aaa9a4;
+        font-size: 7px;
+      }
+
+      .transport-table {
+        margin: 24px 0;
+        border-top: 1px solid var(--ink);
+        border-left: 1px solid var(--ink);
+      }
+
+      .transport-row {
+        display: grid;
+        grid-template-columns: 0.7fr 1fr 1.4fr;
+      }
+
+      .transport-row > * {
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        padding: 10px 13px;
+        border-right: 1px solid var(--ink);
+        border-bottom: 1px solid var(--ink);
+        font-size: 10px;
+      }
+
+      .transport-row.header > * {
+        min-height: 36px;
+        background: var(--ink);
+        color: #c9c9c5;
+        font-family: var(--mono);
+        font-size: 7px;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+
+      .transport-row strong {
+        font-family: var(--display);
+        font-size: 10px;
+        font-weight: 730;
+        text-transform: uppercase;
+      }
+
+      .transport-row span {
+        color: var(--muted);
+      }
+
+      .flow {
+        margin: 27px 0;
+        border-top: 1px solid var(--ink);
+      }
+
+      .flow-step {
+        display: grid;
+        grid-template-columns: 48px 140px 1fr;
+        align-items: center;
+        gap: 17px;
+        min-height: 76px;
+        border-bottom: 1px solid var(--ink);
+      }
+
+      .flow-step > span {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        background: var(--ink);
+        color: white;
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .flow-step strong {
+        font-family: var(--display);
+        font-size: 11px;
+        font-weight: 730;
+        text-transform: uppercase;
+      }
+
+      .flow-step p {
+        margin: 0;
+        font-size: 11px;
+      }
+
+      .api-table {
+        margin: 26px 0;
+        border-top: 1px solid var(--ink);
+      }
+
+      .api-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 0.9fr) 1.1fr;
+        gap: 24px;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .api-row code {
+        color: var(--ink);
+        font-size: 9px;
+        font-weight: 500;
+      }
+
+      .api-row span {
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.5;
+      }
+
+      .tokens {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+        margin: 24px 0;
+        border-top: 1px solid var(--ink);
+        border-left: 1px solid var(--ink);
+      }
+
+      .tokens code {
+        min-height: 42px;
+        display: grid;
+        place-items: center;
+        padding: 0 13px;
+        border-right: 1px solid var(--ink);
+        border-bottom: 1px solid var(--ink);
+        background: var(--surface);
+        font-size: 8px;
+      }
+
+      .collective-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        margin: 27px 0;
+        border-top: 1px solid var(--ink);
+        border-left: 1px solid var(--ink);
+      }
+
+      .collective-card {
+        min-height: 148px;
+        padding: 18px;
+        border-right: 1px solid var(--ink);
+        border-bottom: 1px solid var(--ink);
+        background: var(--surface);
+      }
+
+      .collective-card > span {
+        color: var(--red);
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .collective-card strong {
+        display: block;
+        margin: 29px 0 8px;
+        font-family: var(--display);
+        font-size: 13px;
+        font-weight: 730;
+        text-transform: uppercase;
+      }
+
+      .collective-card p {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.55;
+      }
+
+      .benchmark-panel {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        margin: 28px 0;
+        border: 1px solid var(--ink);
+        background: var(--surface);
+      }
+
+      .benchmark-main {
+        min-height: 260px;
+        display: grid;
+        align-content: space-between;
+        padding: 25px;
+        border-right: 1px solid var(--ink);
+      }
+
+      .benchmark-main > span {
+        color: var(--red);
+        font-family: var(--mono);
+        font-size: 8px;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .benchmark-main strong {
+        font-family: var(--display);
+        font-size: clamp(54px, 7vw, 92px);
+        font-weight: 820;
+        letter-spacing: -0.08em;
+        line-height: 0.8;
+      }
+
+      .benchmark-main strong small {
+        color: var(--red);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0;
+      }
+
+      .benchmark-main > div {
+        display: flex;
+        gap: 30px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 7px;
+        text-transform: uppercase;
+      }
+
+      .benchmark-bars {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        align-items: end;
+        gap: 6px;
+        min-height: 260px;
+        padding: 25px;
+      }
+
+      .benchmark-bars i {
+        min-height: 8px;
+        background: #d4d4cf;
+      }
+
+      .benchmark-bars i:nth-last-child(-n + 3) {
+        background: var(--ink);
+      }
+
+      .benchmark-bars i:last-child {
+        background: var(--red);
+      }
+
+      .roadmap {
+        margin: 25px 0;
+        border-top: 1px solid var(--ink);
+      }
+
+      .roadmap-item {
+        display: grid;
+        grid-template-columns: 82px 190px 1fr;
+        align-items: center;
+        gap: 20px;
+        min-height: 80px;
+        border-bottom: 1px solid var(--ink);
+      }
+
+      .roadmap-item > span {
+        width: fit-content;
+        padding: 4px 6px;
+        background: var(--red);
+        color: white;
+        font-family: var(--mono);
+        font-size: 7px;
+        text-transform: uppercase;
+      }
+
+      .roadmap-item strong {
+        font-family: var(--display);
+        font-size: 11px;
+        font-weight: 730;
+        text-transform: uppercase;
+      }
+
+      .roadmap-item p {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.5;
+      }
+
+      .site-footer {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 30px;
+        margin-top: 100px;
+        padding: 27px 0;
+        border-top: 3px solid var(--ink);
+        font-family: var(--mono);
+        font-size: 8px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .site-footer span {
+        color: var(--quiet);
+      }
+
+      .site-footer a {
+        color: var(--red-dark);
+        font-weight: 600;
+      }
+
+      .search-backdrop {
+        position: fixed;
+        z-index: 100;
+        inset: 0;
+        display: none;
+        justify-content: center;
+        padding: min(14vh, 120px) 20px 30px;
+        background: rgba(9, 9, 9, 0.58);
+        backdrop-filter: blur(5px);
+      }
+
+      .search-backdrop.open {
+        display: flex;
+      }
+
+      .search-dialog {
+        width: min(660px, 100%);
+        height: fit-content;
+        max-height: min(650px, 80vh);
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--ink);
+        background: var(--paper);
+        box-shadow: 15px 15px 0 var(--red);
+      }
+
+      .search-field {
+        min-height: 64px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--ink);
+      }
+
+      .search-field > span {
+        color: var(--red);
+        font-size: 24px;
+      }
+
+      .search-field input {
+        min-width: 0;
+        flex: 1;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .search-field button {
+        padding: 5px 7px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--quiet);
+        font-family: var(--mono);
+        font-size: 7px;
+      }
+
+      .results-heading {
+        display: block;
+        padding: 14px 16px 8px;
+        color: var(--quiet);
+        font-family: var(--mono);
+        font-size: 7px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .search-results {
+        overflow-y: auto;
+        padding: 0 9px 9px;
+      }
+
+      .search-result {
+        display: grid;
+        grid-template-columns: 34px 1fr auto;
+        align-items: center;
+        gap: 12px;
+        min-height: 58px;
+        padding: 9px;
+        border: 1px solid transparent;
+      }
+
+      .search-result:hover,
+      .search-result.active {
+        border-color: var(--ink);
+        background: var(--surface);
+      }
+
+      .result-mark {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        background: var(--ink);
+        color: white;
+        font-family: var(--mono);
+        font-size: 8px;
+      }
+
+      .search-result > span:nth-child(2) {
+        display: grid;
+        gap: 3px;
+      }
+
+      .search-result strong {
+        font-family: var(--display);
+        font-size: 11px;
+        font-weight: 720;
+        text-transform: uppercase;
+      }
+
+      .search-result small {
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .search-result em {
+        color: var(--red-dark);
+        font-family: var(--mono);
+        font-size: 7px;
+        font-style: normal;
+        text-transform: uppercase;
+      }
+
+      .search-empty {
+        padding: 50px 20px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 9px;
+        text-align: center;
+      }
+
+      .search-help {
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        gap: 17px;
+        padding: 0 14px;
+        border-top: 1px solid var(--line);
+        color: var(--quiet);
+        font-family: var(--mono);
+        font-size: 7px;
+      }
+
+      .menu-backdrop {
+        position: fixed;
+        z-index: 35;
+        inset: var(--header-height) 0 0;
+        display: none;
+        background: rgba(9, 9, 9, 0.4);
+      }
+
+      @media (max-width: 1080px) {
+        :root {
+          --sidebar-width: 220px;
+        }
+
+        .topnav {
+          display: none;
+        }
+
+        .topbar {
+          grid-template-columns: var(--sidebar-width) 1fr;
+        }
+
+        .top-actions {
+          justify-self: end;
+        }
+
+        .hero-bottom {
+          grid-template-columns: 1fr;
+          align-items: start;
+        }
+      }
+
+      @media (max-width: 780px) {
+        :root {
+          --header-height: 62px;
+        }
+
+        .topbar {
+          grid-template-columns: 1fr auto;
+        }
+
+        .brand {
+          border-right: 0;
+          padding-left: 17px;
+        }
+
+        .brand small,
+        .github {
+          display: none;
+        }
+
+        .search-trigger {
+          width: 38px;
+          margin-right: 0;
+          justify-content: center;
+          padding: 0;
+          border: 0;
+          border-left: 1px solid var(--ink);
+        }
+
+        .search-trigger > span:nth-child(2),
+        .search-trigger kbd {
+          display: none;
+        }
+
+        .menu-button {
+          display: grid;
+        }
+
+        .page-shell {
+          display: block;
+        }
+
+        .sidebar {
+          left: auto;
+          right: 0;
+          width: min(340px, 88vw);
+          border-right: 0;
+          border-left: 1px solid var(--ink);
+          transform: translateX(105%);
+          transition: transform 180ms ease;
+        }
+
+        body.menu-open .sidebar {
+          transform: translateX(0);
+        }
+
+        body.menu-open .menu-backdrop {
+          display: block;
+        }
+
+        .main {
+          width: 100%;
+        }
+
+        .content {
+          padding-right: 20px;
+          padding-left: 20px;
+        }
+
+        .hero {
+          min-height: auto;
+          padding-top: 74px;
+        }
+
+        .hero h1 {
+          line-height: 0.82;
+        }
+
+        .hero-bottom {
+          gap: 28px;
+          margin-top: 34px;
+        }
+
+        .measurement,
+        .benchmark-panel {
+          grid-template-columns: 1fr;
+        }
+
+        .measurement-value,
+        .benchmark-main {
+          border-right: 0;
+          border-bottom: 1px solid #50504d;
+        }
+
+        .section-header,
+        .subsection {
+          grid-template-columns: 1fr;
+          gap: 13px;
+        }
+
+        .section-label {
+          padding: 0;
+        }
+
+        .requirements {
+          grid-template-columns: 1fr;
+        }
+
+        .requirements div {
+          min-height: 85px;
+          border-right: 0;
+          border-bottom: 1px solid var(--ink);
+        }
+
+        .requirements div:last-child {
+          border-bottom: 0;
+        }
+
+        .transport-row {
+          grid-template-columns: 0.75fr 1.25fr;
+        }
+
+        .transport-row > *:last-child {
+          display: none;
+        }
+
+        .flow-step {
+          grid-template-columns: 42px 100px 1fr;
+        }
+
+        .api-row {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+
+        .roadmap-item {
+          grid-template-columns: 70px 1fr;
+          gap: 12px;
+          padding: 14px 0;
+        }
+
+        .roadmap-item p {
+          grid-column: 1 / -1;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .hero h1 {
+          font-size: clamp(31px, 11.2cqw, 54px);
+        }
+
+        .hero-actions {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .button {
+          width: 100%;
+        }
+
+        .measurement-value {
+          grid-template-columns: 1fr;
+          align-items: start;
+        }
+
+        .system-diagram {
+          grid-template-columns: repeat(2, 1fr);
+          padding-bottom: 87px;
+        }
+
+        .rank-node:nth-child(-n + 2)::after {
+          display: none;
+        }
+
+        .memory-bar {
+          left: 0;
+          right: 0;
+        }
+
+        .flow-step {
+          grid-template-columns: 38px 1fr;
+          padding: 13px 0;
+        }
+
+        .flow-step p {
+          grid-column: 2;
+        }
+
+        .collective-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .site-footer {
+          grid-template-columns: 1fr;
+        }
+
+        .search-dialog {
+          box-shadow: 7px 7px 0 var(--red);
+        }
+
+        .search-result {
+          grid-template-columns: 30px 1fr;
+        }
+
+        .search-result em {
+          display: none;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main-content">Skip to documentation</a>
+
+    <header class="topbar">
+      <a class="brand" href="#overview" aria-label="macMPI documentation home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>macMPI</span>
+        <small>DOCS</small>
+      </a>
+
+      <nav class="topnav" aria-label="Primary navigation">
+        <a href="#quickstart">Quickstart</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#api">API reference</a>
+        <a href="#benchmarks">Performance</a>
+      </nav>
+
+      <div class="top-actions">
+        <button class="search-trigger" id="search-trigger" type="button" aria-label="Search documentation">
+          <span aria-hidden="true">⌕</span>
+          <span>Search documentation</span>
+          <kbd>⌘ K</kbd>
+        </button>
+        <a class="github" href="https://github.com/Hardikgupta1709/macMpi" target="_blank" rel="noreferrer">
+          GitHub&nbsp;<span>↗</span>
+        </a>
+        <button class="menu-button" id="menu-button" type="button" aria-label="Open documentation menu" aria-expanded="false">
+          MENU
+        </button>
+      </div>
+    </header>
+
+    <div class="menu-backdrop" id="menu-backdrop"></div>
+
+    <div class="page-shell">
+      <aside class="sidebar" id="sidebar">
+        <nav aria-label="Documentation sections">
+          <div class="nav-group">
+            <span class="nav-label">Start here</span>
+            <a class="active" href="#overview">Overview</a>
+            <a href="#quickstart">Quickstart</a>
+          </div>
+          <div class="nav-group">
+            <span class="nav-label">Core concepts</span>
+            <a href="#architecture">Architecture</a>
+            <a href="#progress-engine">Progress engine</a>
+            <a href="#process-runtime">Process runtime</a>
+          </div>
+          <div class="nav-group">
+            <span class="nav-label">API reference</span>
+            <a href="#api">Point-to-point</a>
+            <a href="#collectives">Collectives</a>
+            <a href="#datatypes">Datatypes &amp; ops</a>
+          </div>
+          <div class="nav-group">
+            <span class="nav-label">Performance</span>
+            <a href="#benchmarks">Benchmarks</a>
+            <a href="#roadmap">Roadmap</a>
+          </div>
+        </nav>
+        <div class="sidebar-footer">
+          <span>Version 1.0.0 · C11</span>
+          <a href="https://github.com/Hardikgupta1709/macMpi/issues" target="_blank" rel="noreferrer">Report an issue ↗</a>
+        </div>
+      </aside>
+
+      <main class="main" id="main-content">
+        <div class="content">
+          <section class="hero" id="overview" data-section="overview">
+            <h1>
+              <span>Move bytes.</span>
+              <span class="outline">Not overhead.</span>
+            </h1>
+
+            <div class="hero-bottom">
+              <p class="hero-copy">
+                A from-scratch MPI-1.1 runtime that pairs macOS-native eventing with unified-memory throughput for fast, single-node parallel programs.
+              </p>
+              <div class="hero-actions">
+                <a class="button button-primary" href="#quickstart">Start building <span>→</span></a>
+                <a class="button" href="#architecture">Explore architecture</a>
+              </div>
+            </div>
+
+            <div class="measurement" aria-label="Point-to-point benchmark result">
+              <div class="measurement-value">
+                <strong>102.99</strong>
+                <span><em>GB/s</em> point-to-point bandwidth</span>
+              </div>
+              <div class="measurement-chart" aria-hidden="true">
+                <i style="height:16%"></i><i style="height:21%"></i><i style="height:27%"></i><i style="height:31%"></i>
+                <i style="height:38%"></i><i style="height:35%"></i><i style="height:49%"></i><i style="height:54%"></i>
+                <i style="height:61%"></i><i style="height:67%"></i><i style="height:73%"></i><i style="height:78%"></i>
+                <i style="height:84%"></i><i style="height:91%"></i><i style="height:88%"></i><i style="height:100%"></i>
+              </div>
+            </div>
+          </section>
+
+          <section class="docs-section" id="quickstart" data-section="quickstart">
+            <header class="section-header">
+              <span class="section-label">Quickstart</span>
+              <div>
+                <h2>Build once. Launch every rank.</h2>
+                <p class="section-intro">Compile the runtime, link a C program, and create a local rank mesh in a few commands.</p>
+              </div>
+            </header>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Prerequisites</h3>
+              <div class="subsection-body">
+                <p>macMPI targets macOS on Apple Silicon and depends on Darwin-specific process, event, and shared-memory APIs.</p>
+                <div class="requirements">
+                  <div><strong>Apple Clang</strong><span>Xcode Command Line Tools</span></div>
+                  <div><strong>CMake ≥ 3.20</strong><span>Project configuration</span></div>
+                  <div><strong>Ninja</strong><span>Incremental builds</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Build</h3>
+              <div class="subsection-body">
+                <p>Configure an out-of-tree build from the repository root. The default target produces the shared library, launcher, tests, and benchmarks.</p>
+                <div class="code-block">
+                  <div class="code-bar"><span>Terminal</span><button class="copy-button" type="button" data-copy="build-code">Copy</button></div>
+                  <pre id="build-code"><code><span class="comment"># Clone and enter the repository</span>
+git clone https://github.com/Hardikgupta1709/macMpi.git
+cd macMpi
+
+<span class="comment"># Configure and compile</span>
+cmake -S . -B build -G Ninja
+cmake --build build</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <h3 class="subsection-title">First program</h3>
+              <div class="subsection-body">
+                <p>Every rank enters through the same executable. The launcher assigns identity and topology before <code>MPI_Init</code> attaches the process to the runtime.</p>
+                <div class="code-block">
+                  <div class="code-bar"><span>hello_mpi.c</span><button class="copy-button" type="button" data-copy="hello-code">Copy</button></div>
+                  <pre id="hello-code"><code>#include "mpi.h"
+#include &lt;stdio.h&gt;
+
+int main(int argc, char **argv) {
+  MPI_Init(&amp;argc, &amp;argv);
+
+  int rank, size;
+  MPI_Comm_rank(MPI_COMM_WORLD, &amp;rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &amp;size);
+
+  printf("Hello from rank %d of %d\n", rank, size);
+  MPI_Finalize();
+  return 0;
+}</code></pre>
+                </div>
+                <div class="code-block">
+                  <div class="code-bar"><span>Launch eight local ranks</span><button class="copy-button" type="button" data-copy="run-code">Copy</button></div>
+                  <pre id="run-code"><code>./build/mpirun -n 8 ./build/hello_mpi</code></pre>
+                </div>
+                <aside class="note">
+                  <span>!</span>
+                  <div><strong>Launch through mpirun</strong><p>Starting an MPI binary directly leaves its rank, universe, and peer-socket environment undefined.</p></div>
+                </aside>
+              </div>
+            </div>
+          </section>
+
+          <section class="docs-section" id="architecture" data-section="architecture">
+            <header class="section-header">
+              <span class="section-label">Architecture</span>
+              <div>
+                <h2>Control stays small. Payloads stay in memory.</h2>
+                <p class="section-intro">macMPI separates orchestration, progress, signaling, and payload movement so the application thread stays out of the hot path.</p>
+              </div>
+            </header>
+
+            <div class="subsection">
+              <h3 class="subsection-title">System model</h3>
+              <div class="subsection-body">
+                <p>Every rank is a separate process. All ranks map one shared-memory object and inherit a full mesh of Unix-domain sockets from the launcher.</p>
+                <div class="system-diagram" aria-label="Four ranks connected to unified shared memory">
+                  <div class="rank-node"><strong>R0</strong><small>64 MB slab</small></div>
+                  <div class="rank-node"><strong>R1</strong><small>64 MB slab</small></div>
+                  <div class="rank-node"><strong>R2</strong><small>64 MB slab</small></div>
+                  <div class="rank-node"><strong>R3</strong><small>64 MB slab</small></div>
+                  <div class="memory-bar"><strong>Unified shared memory</strong><code>/macmpi_data_plane</code></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Hybrid transport</h3>
+              <div class="subsection-body">
+                <p>The sender copies bytes into its shared slab, then sends a compact routing header that tells the receiver where the payload lives.</p>
+                <div class="transport-table" role="table" aria-label="Transport planes">
+                  <div class="transport-row header" role="row"><span>Plane</span><span>Mechanism</span><span>Purpose</span></div>
+                  <div class="transport-row" role="row"><strong>Control</strong><span>Unix socket</span><span>64-byte header and receiver notification</span></div>
+                  <div class="transport-row" role="row"><strong>Data</strong><span>POSIX SHM</span><span>Payload stored at a per-rank slab offset</span></div>
+                </div>
+                <aside class="note">
+                  <span>i</span>
+                  <div><strong>Why the split matters</strong><p>Large buffers avoid the kernel socket-copy path while socket readiness still gives the engine efficient event-driven wakeups.</p></div>
+                </aside>
+              </div>
+            </div>
+
+            <div class="subsection" id="progress-engine" data-section="progress-engine">
+              <h3 class="subsection-title">Progress engine</h3>
+              <div class="subsection-body">
+                <p>A dedicated pthread owns transport progress. The application posts a request, continues computing, or waits on a condition variable.</p>
+                <div class="flow">
+                  <div class="flow-step"><span>01</span><strong>Post</strong><p><code>MPI_Isend</code> or <code>MPI_Irecv</code> creates an internal request.</p></div>
+                  <div class="flow-step"><span>02</span><strong>Dispatch</strong><p>The engine drains its queue and monitors peer descriptors with <code>kqueue</code>.</p></div>
+                  <div class="flow-step"><span>03</span><strong>Match</strong><p>Incoming headers match active receives by source and tag.</p></div>
+                  <div class="flow-step"><span>04</span><strong>Complete</strong><p>The engine copies payload bytes and signals the waiting application thread.</p></div>
+                </div>
+                <p>Messages that arrive before a receive is posted enter the Unexpected Message Queue and are extracted when a matching request appears.</p>
+              </div>
+            </div>
+
+            <div class="subsection" id="process-runtime" data-section="process-runtime">
+              <h3 class="subsection-title">Process runtime</h3>
+              <div class="subsection-body">
+                <p><code>mpirun</code> constructs the peer socket mesh before forking. Each child closes unrelated descriptors, receives topology through the environment, redirects output to a private pipe, and replaces itself with the target program.</p>
+                <div class="api-table">
+                  <div class="api-row"><code>MPI_RANK</code><span>Current process rank.</span></div>
+                  <div class="api-row"><code>MPI_UNIVERSE_SIZE</code><span>Total number of local ranks.</span></div>
+                  <div class="api-row"><code>MPI_SOCKET_FDS</code><span>Comma-separated inherited peer descriptors.</span></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="docs-section" id="api" data-section="api">
+            <header class="section-header">
+              <span class="section-label">API reference</span>
+              <div>
+                <h2>Typed messages. Explicit completion.</h2>
+                <p class="section-intro">Send buffers between ranks with blocking convenience calls or non-blocking request handles.</p>
+              </div>
+            </header>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Lifecycle</h3>
+              <div class="subsection-body">
+                <div class="api-table">
+                  <div class="api-row"><code>MPI_Init(argc, argv)</code><span>Map shared memory, parse topology, and start transport progress.</span></div>
+                  <div class="api-row"><code>MPI_Comm_rank(comm, &amp;rank)</code><span>Read the caller's rank in a communicator.</span></div>
+                  <div class="api-row"><code>MPI_Comm_size(comm, &amp;size)</code><span>Read the communicator's process count.</span></div>
+                  <div class="api-row"><code>MPI_Finalize()</code><span>Synchronize, stop progress, unmap memory, and close peers.</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Point-to-point</h3>
+              <div class="subsection-body">
+                <p>Blocking calls post one internal request and immediately wait for completion. Non-blocking calls return after queueing work.</p>
+                <div class="api-table">
+                  <div class="api-row"><code>MPI_Send(buf, count, type, dest, tag, comm)</code><span>Send a typed buffer and wait until transport completes.</span></div>
+                  <div class="api-row"><code>MPI_Recv(buf, count, type, source, tag, comm, status)</code><span>Receive a matching buffer and wait for completion.</span></div>
+                  <div class="api-row"><code>MPI_Isend(..., &amp;request)</code><span>Post a send and return a request handle.</span></div>
+                  <div class="api-row"><code>MPI_Irecv(..., &amp;request)</code><span>Post a receive and return a request handle.</span></div>
+                  <div class="api-row"><code>MPI_Wait(&amp;request, status)</code><span>Sleep until the request completes, then release it.</span></div>
+                  <div class="api-row"><code>MPI_Test(&amp;request, &amp;flag, status)</code><span>Check completion without blocking.</span></div>
+                </div>
+                <div class="code-block">
+                  <div class="code-bar"><span>Non-blocking receive</span><button class="copy-button" type="button" data-copy="request-code">Copy</button></div>
+                  <pre id="request-code"><code>MPI_Request request;
+MPI_Irecv(buffer, count, MPI_DOUBLE, source, tag,
+          MPI_COMM_WORLD, &amp;request);
+
+<span class="comment">// Independent work can overlap communication.</span>
+MPI_Wait(&amp;request, MPI_STATUS_IGNORE);</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection" id="datatypes" data-section="datatypes">
+              <h3 class="subsection-title">Datatypes &amp; ops</h3>
+              <div class="subsection-body">
+                <p>Built-in contiguous datatypes cover the current transport. Derived datatype construction is planned.</p>
+                <div class="tokens">
+                  <code>MPI_INT</code><code>MPI_FLOAT</code><code>MPI_DOUBLE</code><code>MPI_CHAR</code><code>MPI_BYTE</code>
+                </div>
+                <p>Reductions support <code>MPI_SUM</code>, <code>MPI_MAX</code>, <code>MPI_MIN</code>, and <code>MPI_PROD</code>.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="docs-section" id="collectives" data-section="collectives">
+            <header class="section-header">
+              <span class="section-label">Collectives</span>
+              <div>
+                <h2>Coordinate ranks without a serial center.</h2>
+                <p class="section-intro">Tree and dissemination structures spread synchronization and data movement across the communicator.</p>
+              </div>
+            </header>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Synchronization</h3>
+              <div class="subsection-body">
+                <p><code>MPI_Barrier</code> uses dissemination rounds. At round <em>k</em>, each rank exchanges a token with peers offset by 2<sup>k</sup>, giving logarithmic round depth.</p>
+                <p><code>MPI_Bcast</code> maps the selected root to virtual rank zero and expands a binomial tree one power of two per round.</p>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Data movement</h3>
+              <div class="subsection-body">
+                <div class="collective-grid">
+                  <article class="collective-card"><span>ROOT → ALL</span><strong>MPI_Bcast</strong><p>Replicate one typed buffer through a binomial tree.</p></article>
+                  <article class="collective-card"><span>ROOT → SLICES</span><strong>MPI_Scatter</strong><p>Partition a root-owned buffer across ordered ranks.</p></article>
+                  <article class="collective-card"><span>SLICES → ROOT</span><strong>MPI_Gather</strong><p>Collect rank-local slices into root-owned storage.</p></article>
+                  <article class="collective-card"><span>ALL → ALL</span><strong>MPI_Allgather</strong><p>Gather at rank zero, then broadcast the complete array.</p></article>
+                  <article class="collective-card"><span>ALL ⇄ ALL</span><strong>MPI_Alltoall</strong><p>Exchange one peer-specific slice with every other rank.</p></article>
+                  <article class="collective-card"><span>TREE → ALL</span><strong>MPI_Allreduce</strong><p>Reduce through an inverse tree, then broadcast the result.</p></article>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Reduction</h3>
+              <div class="subsection-body">
+                <p><code>MPI_Reduce</code> combines rank-local values up an inverse binary tree. <code>MPI_Allreduce</code> composes that operation with broadcast so every rank receives the result.</p>
+                <div class="code-block">
+                  <div class="code-bar"><span>Global sum</span><button class="copy-button" type="button" data-copy="reduce-code">Copy</button></div>
+                  <pre id="reduce-code"><code>double local = compute_partial_result();
+double total = 0.0;
+
+MPI_Allreduce(&amp;local, &amp;total, 1, MPI_DOUBLE,
+              MPI_SUM, MPI_COMM_WORLD);</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="docs-section" id="benchmarks" data-section="benchmarks">
+            <header class="section-header">
+              <span class="section-label">Performance</span>
+              <div>
+                <h2>Measure the shared-memory fast path.</h2>
+                <p class="section-intro">Reproduce the repository's large-payload throughput result and record enough context to make comparisons meaningful.</p>
+              </div>
+            </header>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Headline result</h3>
+              <div class="subsection-body">
+                <div class="benchmark-panel">
+                  <div class="benchmark-main">
+                    <span>Point-to-point throughput</span>
+                    <strong>102.99 <small>GB/s</small></strong>
+                    <div><span>Payload 19.07 MB</span><span>Iterations 1,000</span></div>
+                  </div>
+                  <div class="benchmark-bars" aria-hidden="true">
+                    <i style="height:22%"></i><i style="height:31%"></i><i style="height:42%"></i><i style="height:49%"></i>
+                    <i style="height:60%"></i><i style="height:73%"></i><i style="height:87%"></i><i style="height:100%"></i>
+                  </div>
+                </div>
+                <p>This is local memory-path throughput, not network bandwidth between machines. Large contiguous transfers amortize fixed control-plane and matching costs.</p>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <h3 class="subsection-title">Run it</h3>
+              <div class="subsection-body">
+                <div class="code-block">
+                  <div class="code-bar"><span>Shared-memory benchmark</span><button class="copy-button" type="button" data-copy="bench-code">Copy</button></div>
+                  <pre id="bench-code"><code>cmake -S . -B build -G Ninja
+cmake --build build
+./build/mpirun -n 8 "$(pwd)/build/benchmark_shm"</code></pre>
+                </div>
+                <aside class="note">
+                  <span>i</span>
+                  <div><strong>Compare like with like</strong><p>Record chip model, rank count, compiler version, build flags, payload size, and iteration count with every result.</p></div>
+                </aside>
+              </div>
+            </div>
+
+            <div class="subsection" id="roadmap" data-section="roadmap">
+              <h3 class="subsection-title">Roadmap</h3>
+              <div class="subsection-body">
+                <div class="roadmap">
+                  <div class="roadmap-item"><span>Next</span><strong>Derived datatypes</strong><p>Describe non-contiguous vectors and structured memory layouts.</p></div>
+                  <div class="roadmap-item"><span>Next</span><strong>MPI_Comm_split</strong><p>Partition the world communicator into independent runtime groups.</p></div>
+                  <div class="roadmap-item"><span>Explore</span><strong>Benchmark rigor</strong><p>Add latency distributions, affinity controls, and reproducible machine profiles.</p></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <footer class="site-footer">
+            <span>macMPI documentation · Single-file static edition</span>
+            <a href="https://github.com/Hardikgupta1709/macMpi" target="_blank" rel="noreferrer">View source on GitHub ↗</a>
+          </footer>
+        </div>
+      </main>
+    </div>
+
+    <div class="search-backdrop" id="search-backdrop" role="presentation">
+      <div class="search-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title">
+        <div class="search-field">
+          <span aria-hidden="true">⌕</span>
+          <input id="search-input" type="search" autocomplete="off" placeholder="Search functions, concepts, and guides…" aria-label="Search documentation">
+          <button id="search-close" type="button" aria-label="Close search">ESC</button>
+        </div>
+        <span class="results-heading" id="search-title">Quick links</span>
+        <div class="search-results" id="search-results"></div>
+        <div class="search-help"><span>↑ ↓ navigate</span><span>↵ open</span><span>esc close</span></div>
+      </div>
+    </div>
+
+    <script>
+      (() => {
+        const searchItems = [
+          { title: "Quickstart", group: "Guide", description: "Build macMPI and launch your first ranks.", target: "quickstart", keywords: "install cmake ninja build mpirun hello" },
+          { title: "System architecture", group: "Concept", description: "Ranks, sockets, and unified shared memory.", target: "architecture", keywords: "system design memory rank socket mesh" },
+          { title: "Hybrid transport", group: "Concept", description: "Shared-memory payloads and socket control.", target: "architecture", keywords: "shm mmap slab header unix data plane control plane" },
+          { title: "Progress engine", group: "Concept", description: "Asynchronous kqueue dispatch and matching.", target: "progress-engine", keywords: "pthread kqueue request queue umq background" },
+          { title: "Process runtime", group: "Concept", description: "How mpirun creates and identifies ranks.", target: "process-runtime", keywords: "fork exec environment socket mesh poll" },
+          { title: "MPI_Send / MPI_Recv", group: "API", description: "Blocking point-to-point communication.", target: "api", keywords: "send receive source destination tag status" },
+          { title: "MPI_Isend / MPI_Irecv", group: "API", description: "Non-blocking request creation.", target: "api", keywords: "isend irecv wait test request overlap" },
+          { title: "Datatypes & operations", group: "API", description: "Built-in types and reduction operators.", target: "datatypes", keywords: "int float double char byte sum max min prod" },
+          { title: "Collective operations", group: "API", description: "Barrier, broadcast, gather, and reductions.", target: "collectives", keywords: "barrier bcast scatter gather allgather alltoall reduce allreduce" },
+          { title: "Shared-memory benchmark", group: "Performance", description: "Reproduce the 102.99 GB/s result.", target: "benchmarks", keywords: "benchmark bandwidth latency throughput iterations" },
+          { title: "Roadmap", group: "Project", description: "Derived datatypes and communicator splitting.", target: "roadmap", keywords: "future type vector comm split" }
+        ];
+
+        const searchTrigger = document.getElementById("search-trigger");
+        const searchBackdrop = document.getElementById("search-backdrop");
+        const searchInput = document.getElementById("search-input");
+        const searchResults = document.getElementById("search-results");
+        const searchTitle = document.getElementById("search-title");
+        const searchClose = document.getElementById("search-close");
+        const menuButton = document.getElementById("menu-button");
+        const menuBackdrop = document.getElementById("menu-backdrop");
+        const sidebar = document.getElementById("sidebar");
+        let activeResult = 0;
+        let visibleResults = [];
+
+        function openSearch() {
+          searchBackdrop.classList.add("open");
+          document.body.classList.add("search-open");
+          activeResult = 0;
+          renderResults("");
+          requestAnimationFrame(() => searchInput.focus());
+        }
+
+        function closeSearch() {
+          searchBackdrop.classList.remove("open");
+          document.body.classList.remove("search-open");
+          searchInput.value = "";
+        }
+
+        function renderResults(query) {
+          const normalized = query.trim().toLowerCase();
+          visibleResults = searchItems.filter((item) =>
+            `${item.title} ${item.description} ${item.group} ${item.keywords}`.toLowerCase().includes(normalized)
+          ).slice(0, 8);
+          activeResult = Math.min(activeResult, Math.max(0, visibleResults.length - 1));
+          searchTitle.textContent = normalized ? `${visibleResults.length} results` : "Quick links";
+
+          if (!visibleResults.length) {
+            searchResults.innerHTML = '<div class="search-empty">No documentation matched. Try “shared memory”, “reduce”, or “mpirun”.</div>';
+            return;
+          }
+
+          searchResults.innerHTML = visibleResults.map((item, index) => `
+            <a class="search-result${index === activeResult ? " active" : ""}" href="#${item.target}" data-result="${index}">
+              <span class="result-mark">${item.group.slice(0, 1)}</span>
+              <span><strong>${item.title}</strong><small>${item.description}</small></span>
+              <em>${item.group}</em>
+            </a>
+          `).join("");
+
+          searchResults.querySelectorAll(".search-result").forEach((result) => {
+            result.addEventListener("mouseenter", () => {
+              activeResult = Number(result.dataset.result);
+              updateActiveResult();
+            });
+            result.addEventListener("click", closeSearch);
+          });
+        }
+
+        function updateActiveResult() {
+          searchResults.querySelectorAll(".search-result").forEach((result, index) => {
+            result.classList.toggle("active", index === activeResult);
+          });
+        }
+
+        function openActiveResult() {
+          const item = visibleResults[activeResult];
+          if (!item) return;
+          closeSearch();
+          window.location.hash = item.target;
+        }
+
+        function closeMenu() {
+          document.body.classList.remove("menu-open");
+          menuButton.setAttribute("aria-expanded", "false");
+          menuButton.textContent = "MENU";
+        }
+
+        function toggleMenu() {
+          const open = document.body.classList.toggle("menu-open");
+          menuButton.setAttribute("aria-expanded", String(open));
+          menuButton.textContent = open ? "CLOSE" : "MENU";
+        }
+
+        searchTrigger.addEventListener("click", openSearch);
+        searchClose.addEventListener("click", closeSearch);
+        searchInput.addEventListener("input", () => {
+          activeResult = 0;
+          renderResults(searchInput.value);
+        });
+
+        searchInput.addEventListener("keydown", (event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            activeResult = Math.min(activeResult + 1, visibleResults.length - 1);
+            updateActiveResult();
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            activeResult = Math.max(activeResult - 1, 0);
+            updateActiveResult();
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            openActiveResult();
+          }
+        });
+
+        searchBackdrop.addEventListener("mousedown", (event) => {
+          if (event.target === searchBackdrop) closeSearch();
+        });
+
+        menuButton.addEventListener("click", toggleMenu);
+        menuBackdrop.addEventListener("click", closeMenu);
+        sidebar.querySelectorAll("a").forEach((link) => link.addEventListener("click", closeMenu));
+
+        document.addEventListener("keydown", (event) => {
+          const tag = document.activeElement && document.activeElement.tagName;
+          if ((event.key === "k" && (event.metaKey || event.ctrlKey)) ||
+              (event.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA")) {
+            event.preventDefault();
+            openSearch();
+          } else if (event.key === "Escape") {
+            if (searchBackdrop.classList.contains("open")) closeSearch();
+            else closeMenu();
+          }
+        });
+
+        document.querySelectorAll(".copy-button").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const target = document.getElementById(button.dataset.copy);
+            if (!target) return;
+            try {
+              await navigator.clipboard.writeText(target.innerText);
+              button.textContent = "Copied";
+              window.setTimeout(() => { button.textContent = "Copy"; }, 1200);
+            } catch {
+              button.textContent = "Select code";
+            }
+          });
+        });
+
+        const navLinks = Array.from(sidebar.querySelectorAll("a[href^='#']"));
+        const sectionIds = navLinks.map((link) => link.getAttribute("href").slice(1));
+        const observed = sectionIds
+          .map((id) => document.getElementById(id))
+          .filter(Boolean);
+
+        const observer = new IntersectionObserver((entries) => {
+          const visible = entries
+            .filter((entry) => entry.isIntersecting)
+            .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+          if (!visible.length) return;
+          const id = visible[0].target.id;
+          navLinks.forEach((link) => link.classList.toggle("active", link.getAttribute("href") === `#${id}`));
+        }, { rootMargin: "-18% 0px -68% 0px", threshold: 0 });
+
+        observed.forEach((section) => observer.observe(section));
+        renderResults("");
+      })();
+    </script>
+  </body>
+</html>
